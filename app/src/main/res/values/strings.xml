@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">Notes</string>
+    <string name="add_note">Add Note</string>
+    <string name="title">Title</string>
+    <string name="content">Content</string>
+    <string name="toggle_checklist">Toggle Checklist</string>
+    <string name="checklist_item">Checklist Item</string>
+    <string name="new_item">New Note</string>
+</resources>
