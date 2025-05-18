@@ -1,8 +1,8 @@
+// DatabaseHelper.kt
 package com.example.notes
 
 import android.content.ContentValues
 import android.content.Context
-import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import java.text.SimpleDateFormat
@@ -20,13 +20,6 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         private const val COLUMN_TITLE = "title"
         private const val COLUMN_CONTENT = "content"
         private const val COLUMN_TIMESTAMP = "timestamp"
-
-        // Tasks table
-        private const val TABLE_TASKS = "tasks"
-        private const val COLUMN_TASK_ID = "id"
-        private const val COLUMN_NOTE_ID = "note_id"
-        private const val COLUMN_TASK_TEXT = "task_text"
-        private const val COLUMN_IS_CHECKED = "is_checked"
     }
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -40,23 +33,10 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             )
         """.trimIndent()
 
-        // Create tasks table
-        val createTasksTable = """
-            CREATE TABLE $TABLE_TASKS (
-                $COLUMN_TASK_ID INTEGER PRIMARY KEY AUTOINCREMENT,
-                $COLUMN_NOTE_ID INTEGER NOT NULL,
-                $COLUMN_TASK_TEXT TEXT NOT NULL,
-                $COLUMN_IS_CHECKED INTEGER DEFAULT 0,
-                FOREIGN KEY ($COLUMN_NOTE_ID) REFERENCES $TABLE_NOTES($COLUMN_ID) ON DELETE CASCADE
-            )
-        """.trimIndent()
-
         db.execSQL(createNotesTable)
-        db.execSQL(createTasksTable)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        db.execSQL("DROP TABLE IF EXISTS $TABLE_TASKS")
         db.execSQL("DROP TABLE IF EXISTS $TABLE_NOTES")
         onCreate(db)
     }
@@ -129,76 +109,16 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         return result
     }
 
-    fun deleteNote(id: Long): Int {
+    fun deleteNotes(noteIds: List<Long>): Int {
         val db = this.writableDatabase
-        val result = db.delete(TABLE_NOTES, "$COLUMN_ID=?", arrayOf(id.toString()))
-        db.close()
-        return result
-    }
+        var deletedCount = 0
 
-    // Task operations
-    fun insertTask(noteId: Long, taskText: String): Long {
-        val db = this.writableDatabase
-        val values = ContentValues()
-        values.put(COLUMN_NOTE_ID, noteId)
-        values.put(COLUMN_TASK_TEXT, taskText)
-        values.put(COLUMN_IS_CHECKED, 0)
-
-        val id = db.insert(TABLE_TASKS, null, values)
-        db.close()
-        return id
-    }
-
-    fun getTasksForNote(noteId: Long): List<Task> {
-        val tasksList = mutableListOf<Task>()
-        val db = this.readableDatabase
-        val cursor = db.query(
-            TABLE_TASKS,
-            null,
-            "$COLUMN_NOTE_ID=?",
-            arrayOf(noteId.toString()),
-            null, null, null
-        )
-
-        if (cursor.moveToFirst()) {
-            do {
-                val id = cursor.getLong(cursor.getColumnIndexOrThrow(COLUMN_TASK_ID))
-                val taskText = cursor.getString(cursor.getColumnIndexOrThrow(COLUMN_TASK_TEXT))
-                val isChecked = cursor.getInt(cursor.getColumnIndexOrThrow(COLUMN_IS_CHECKED)) == 1
-
-                tasksList.add(Task(id, noteId, taskText, isChecked))
-            } while (cursor.moveToNext())
+        for (id in noteIds) {
+            deletedCount += db.delete(TABLE_NOTES, "$COLUMN_ID=?", arrayOf(id.toString()))
         }
-        cursor.close()
+
         db.close()
-        return tasksList
-    }
-
-    fun updateTaskStatus(taskId: Long, isChecked: Boolean): Int {
-        val db = this.writableDatabase
-        val values = ContentValues()
-        values.put(COLUMN_IS_CHECKED, if (isChecked) 1 else 0)
-
-        val result = db.update(TABLE_TASKS, values, "$COLUMN_TASK_ID=?", arrayOf(taskId.toString()))
-        db.close()
-        return result
-    }
-
-    fun updateTaskText(taskId: Long, taskText: String): Int {
-        val db = this.writableDatabase
-        val values = ContentValues()
-        values.put(COLUMN_TASK_TEXT, taskText)
-
-        val result = db.update(TABLE_TASKS, values, "$COLUMN_TASK_ID=?", arrayOf(taskId.toString()))
-        db.close()
-        return result
-    }
-
-    fun deleteTask(taskId: Long): Int {
-        val db = this.writableDatabase
-        val result = db.delete(TABLE_TASKS, "$COLUMN_TASK_ID=?", arrayOf(taskId.toString()))
-        db.close()
-        return result
+        return deletedCount
     }
 
     private fun getCurrentTimestamp(): String {

@@ -1,14 +1,15 @@
+// NoteActivity.kt
 package com.example.notes
 
-import android.content.DialogInterface
 import android.os.Bundle
 import android.widget.Button
-import android.widget.EditText
-import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
+import android.widget.ImageButton
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
+import com.example.notes.DatabaseHelper
+import com.example.notes.NoteEditText
+import com.example.notes.R
+import java.util.*
 
 class NoteActivity : AppCompatActivity() {
 
@@ -17,120 +18,73 @@ class NoteActivity : AppCompatActivity() {
     }
 
     private lateinit var dbHelper: DatabaseHelper
-    private lateinit var taskAdapter: TaskAdapter
-
-    private lateinit var etTitle: EditText
-    private lateinit var etContent: EditText
-    private lateinit var btnAddTask: Button
-    private lateinit var rvTasks: RecyclerView
-    private lateinit var btnSaveNote: Button
-
+    private lateinit var noteEditText: NoteEditText
     private var noteId: Long = -1
-    private lateinit var note: Note
+
+    private lateinit var btnDone: Button
+    private lateinit var ibInsertCheckbox: ImageButton
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_note)
+        setContentView(R.layout.activity_note_edit)
 
         // Initialize SQLite helper
         dbHelper = DatabaseHelper(this)
 
         // Initialize UI components
-        etTitle = findViewById(R.id.etTitle)
-        etContent = findViewById(R.id.etContent)
-        btnAddTask = findViewById(R.id.btnAddTask)
-        rvTasks = findViewById(R.id.rvTasks)
-        btnSaveNote = findViewById(R.id.btnSaveNote)
+        btnDone = findViewById(R.id.btnDone)
+        ibInsertCheckbox = findViewById(R.id.ibInsertCheckbox)
+        noteEditText = findViewById(R.id.etNoteContent)
 
         // Get note ID from intent
         noteId = intent.getLongExtra(EXTRA_NOTE_ID, -1)
         if (noteId == -1L) {
-            Toast.makeText(this, "Error opening note", Toast.LENGTH_SHORT).show()
             finish()
             return
         }
 
-        // Load note details
+        // Load note content
         loadNote()
 
-        // Set up tasks RecyclerView
-        setupTasksRecyclerView()
-
         // Set click listeners
-        btnAddTask.setOnClickListener {
-            showAddTaskDialog()
+        btnDone.setOnClickListener {
+            saveNote()
+            finish()
         }
 
-        btnSaveNote.setOnClickListener {
-            saveNote()
+        ibInsertCheckbox.setOnClickListener {
+            noteEditText.insertCheckbox()
         }
+
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // Save note when leaving the activity
+        saveNote()
     }
 
     private fun loadNote() {
-        val loadedNote = dbHelper.getNoteById(noteId)
-        if (loadedNote != null) {
-            note = loadedNote
-            etTitle.setText(note.title)
-            etContent.setText(note.content)
-        } else {
-            Toast.makeText(this, "Note not found", Toast.LENGTH_SHORT).show()
-            finish()
+        val note = dbHelper.getNoteById(noteId)
+        if (note != null) {
+            noteEditText.setTitleAndContent(note.title, note.content)
         }
-    }
 
-    private fun setupTasksRecyclerView() {
-        // Initialize adapter with callbacks
-        taskAdapter = TaskAdapter(
-            tasks = dbHelper.getTasksForNote(noteId).toMutableList(),
-            onTaskCheckedChanged = { task, isChecked ->
-                dbHelper.updateTaskStatus(task.id, isChecked)
-            },
-            onTaskTextChanged = { task, newText ->
-                dbHelper.updateTaskText(task.id, newText)
-            },
-            onTaskDeleted = { task ->
-                dbHelper.deleteTask(task.id)
-                Toast.makeText(this, "Task deleted", Toast.LENGTH_SHORT).show()
-            }
-        )
-
-        // Set up RecyclerView
-        rvTasks.apply {
-            layoutManager = LinearLayoutManager(this@NoteActivity)
-            adapter = taskAdapter
+        // Set focus to the beginning if it's a new note
+        if (note?.title.isNullOrEmpty() && note?.content.isNullOrEmpty()) {
+            noteEditText.requestFocus()
         }
-    }
-
-    private fun showAddTaskDialog() {
-        val view = layoutInflater.inflate(R.layout.dialog_add_task, null)
-        val etNewTaskText = view.findViewById<EditText>(R.id.etNewTaskText)
-
-        AlertDialog.Builder(this)
-            .setTitle("Add Task")
-            .setView(view)
-            .setPositiveButton("Add") { _, _ ->
-                val taskText = etNewTaskText.text.toString().trim()
-                if (taskText.isNotEmpty()) {
-                    val taskId = dbHelper.insertTask(noteId, taskText)
-                    val newTask = Task(taskId, noteId, taskText, false)
-                    taskAdapter.addTask(newTask)
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
     }
 
     private fun saveNote() {
-        val title = etTitle.text.toString().trim()
-        val content = etContent.text.toString().trim()
+        val (title, content) = noteEditText.getTitleAndContent()
 
-        if (title.isEmpty()) {
-            Toast.makeText(this, "Title cannot be empty", Toast.LENGTH_SHORT).show()
-            return
+        // Only save if there's actual content
+        if (title.isNotEmpty() || content.isNotEmpty()) {
+            dbHelper.updateNote(noteId, title, content)
+        } else {
+            // Delete empty notes
+            dbHelper.deleteNotes(listOf(noteId))
         }
-
-        dbHelper.updateNote(noteId, title, content)
-        Toast.makeText(this, "Note saved", Toast.LENGTH_SHORT).show()
-        finish()
     }
 }
