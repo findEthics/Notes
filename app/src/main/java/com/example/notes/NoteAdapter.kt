@@ -31,7 +31,8 @@ class NoteAdapter(
         val note = notes[position]
 
         // Set note title
-        holder.tvNoteTitle.text = note.title.ifEmpty { "Untitled Note" }
+        val firstLineOfContent = note.content.lines().firstOrNull() ?: ""
+        holder.tvNoteTitle.text = "${note.title.ifEmpty { "Untitled Note" }}\n$firstLineOfContent"
 
         // Handle selection mode
         if (selectionMode) {

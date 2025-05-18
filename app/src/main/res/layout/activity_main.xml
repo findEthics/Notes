@@ -40,7 +40,7 @@
             android:id="@+id/ibEditNotes"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:src="@android:drawable/ic_menu_edit"
+            android:src="@drawable/ic_edit_note"
             android:background="?android:attr/selectableItemBackground"
             android:contentDescription="@string/edit_notes"
             android:padding="8dp" />
@@ -50,7 +50,7 @@
             android:id="@+id/ibAddNote"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:src="@android:drawable/ic_input_add"
+            android:src="@drawable/ic_add_note"
             android:background="?android:attr/selectableItemBackground"
             android:contentDescription="@string/add_note"
             android:padding="8dp" />

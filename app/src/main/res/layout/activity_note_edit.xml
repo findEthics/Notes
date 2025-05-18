@@ -10,8 +10,19 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:background="#E0E0E0"
+        android:background="#FFFFFF"
         android:padding="8dp">
+
+        <TextView
+            android:id="@+id/tvNotesLabel"
+            android:layout_width="wrap_content"
+            android:layout_weight="1"
+            android:layout_height="match_parent"
+            android:text="@string/app_name"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:textColor="@android:color/black"
+            android:gravity="start|center" />
 
         <!-- Spacer to push items to the right -->
         <View
@@ -25,9 +36,16 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Done"
-            android:textColor="@android:color/black"
-            android:backgroundTint="#E0E0E0" />
+            android:textStyle="bold"
+            android:textColor="@android:color/white"
+            android:backgroundTint="@color/black" />
     </LinearLayout>
+
+    <!-- Bold horizontal divider line -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="3dp"
+        android:background="@android:color/black" />
 
     <!-- Note content area -->
     <com.example.notes.NoteEditText
@@ -40,5 +58,6 @@
         android:background="@null"
         android:hint="Title\n\nContent"
         android:inputType="textNoSuggestions|textMultiLine"
-        android:textColor="@android:color/black" />
+        android:textColor="@android:color/black"
+        android:textSize="24sp" />
 </LinearLayout>

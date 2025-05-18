@@ -69,7 +69,7 @@ class MainActivity : AppCompatActivity() {
         rvNotes.apply {
             layoutManager = LinearLayoutManager(this@MainActivity)
             adapter = noteAdapter
-            addItemDecoration(DividerItemDecoration(this@MainActivity, DividerItemDecoration.VERTICAL))
+//            addItemDecoration(DividerItemDecoration(this@MainActivity, DividerItemDecoration.VERTICAL))
         }
 
         loadNotes()

@@ -2,8 +2,11 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="horizontal"
-    android:padding="16dp"
+    android:orientation="vertical"
+    android:paddingTop="8dp"
+    android:paddingStart="16dp"
+    android:paddingEnd="16dp"
+
     android:background="@android:color/white">
 
     <!-- Checkbox (hidden by default, shown in selection mode) -->
@@ -13,14 +16,26 @@
         android:layout_height="wrap_content"
         android:visibility="gone" />
 
-    <!-- Note title -->
-    <TextView
-        android:id="@+id/tvNoteTitle"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:textColor="@android:color/black"
-        android:textSize="16sp"
-        android:textStyle="bold"
-        android:ellipsize="end"
-        android:maxLines="1" />
+        android:orientation="horizontal">
+        <!-- Note title -->
+        <TextView
+            android:id="@+id/tvNoteTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@android:color/black"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:paddingBottom="8dp"
+            android:maxLines="2"/>
+
+    </LinearLayout>
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="3dp"
+        android:background="?android:attr/listDivider" />
+
+
 </LinearLayout>
