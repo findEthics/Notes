@@ -22,7 +22,6 @@ class NoteActivity : AppCompatActivity() {
     private var noteId: Long = -1
 
     private lateinit var btnDone: Button
-    private lateinit var ibInsertCheckbox: ImageButton
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -33,7 +32,6 @@ class NoteActivity : AppCompatActivity() {
 
         // Initialize UI components
         btnDone = findViewById(R.id.btnDone)
-        ibInsertCheckbox = findViewById(R.id.ibInsertCheckbox)
         noteEditText = findViewById(R.id.etNoteContent)
 
         // Get note ID from intent
@@ -50,10 +48,6 @@ class NoteActivity : AppCompatActivity() {
         btnDone.setOnClickListener {
             saveNote()
             finish()
-        }
-
-        ibInsertCheckbox.setOnClickListener {
-            noteEditText.insertCheckbox()
         }
 
     }
