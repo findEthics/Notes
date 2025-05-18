@@ -6,4 +6,8 @@
     <string name="toggle_checklist">Toggle Checklist</string>
     <string name="checklist_item">Checklist Item</string>
     <string name="new_item">New Note</string>
+    <string name="default_time">04:39</string>
+    <string name="edit_notes">Edit Notes</string>
+    <string name="delete_note">Delete</string>
+
 </resources>
