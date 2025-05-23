@@ -8,6 +8,7 @@ import android.text.style.StrikethroughSpan
 import android.text.style.StyleSpan
 import android.util.AttributeSet
 import android.view.MotionEvent
+import android.view.inputmethod.InputMethodManager
 import androidx.appcompat.widget.AppCompatEditText
 
 class NoteEditText @JvmOverloads constructor(
@@ -97,13 +98,18 @@ class NoteEditText @JvmOverloads constructor(
                     editable.removeSpan(span)
                 }
 
-                // Apply strikethrough
-                editable.setSpan(StrikethroughSpan(), lineStart, lineEnd, Editable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                // Apply strikethrough only if there's text after the checkbox
+                if (line.trim() != CHECKBOX_CHECKED.trim()) {
+                    editable.setSpan(StrikethroughSpan(), lineStart, lineEnd, Editable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                }
             } else if (line.startsWith(CHECKBOX_UNCHECKED)) {
                 val lineStart = position + CHECKBOX_UNCHECKED.length
                 val lineEnd = position + line.length
 
                 // Remove any strikethrough spans
+                // No strikethrough should be applied to unchecked items,
+                // but this ensures any incorrectly applied ones are removed.
+                // This also handles the case where an item is unchecked after being checked.
                 val spans = editable.getSpans(lineStart, lineEnd, StrikethroughSpan::class.java)
                 for (span in spans) {
                     editable.removeSpan(span)
@@ -120,11 +126,20 @@ class NoteEditText @JvmOverloads constructor(
             val lineStart = layout.getLineStart(line)
             val lineEnd = layout.getLineEnd(line)
             val text = text?.subSequence(lineStart, lineEnd).toString()
+
             if (text.startsWith(CHECKBOX_UNCHECKED) || text.startsWith(CHECKBOX_CHECKED)) {
-                toggleCheckbox(lineStart, lineEnd)
-                return true // Consume the touch event
+                // if line has only checkbox and spaces, no strikethrough should apply, instead keyboard should open for display
+                if (text.trim() == CHECKBOX_UNCHECKED.trim() || text.trim() == CHECKBOX_CHECKED.trim()) {
+                    // Show keyboard and allow default touch handling
+                } else {
+                    toggleCheckbox(lineStart, lineEnd)
+                    return true // Consume the touch event only if we toggled a checkbox with content
+                }
             }
         }
+        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
+        requestFocus()
         return super.onTouchEvent(event)
     }
 
@@ -184,7 +199,7 @@ class NoteEditText @JvmOverloads constructor(
         if (editable.isNotEmpty() && editable.last() != '\n') {
             editable.append("\n")
         }
-        editable.append("$CHECKBOX_UNCHECKED ") // Append checkbox and a space
+        editable.append("$CHECKBOX_UNCHECKED") // Append checkbox and a space
 
         // Manually trigger formatting updates
         formatTitle(editable)
@@ -193,5 +208,10 @@ class NoteEditText @JvmOverloads constructor(
 
         // Optionally, move cursor to the end or after the new checkbox
         setSelection(editable.length)
+
+        // Bring up the keyboard
+        requestFocus()
+        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
     }
 }
