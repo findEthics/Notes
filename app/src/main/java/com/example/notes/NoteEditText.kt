@@ -8,6 +8,7 @@ import android.text.style.StrikethroughSpan
 import android.text.style.StyleSpan
 import android.util.AttributeSet
 import android.view.MotionEvent
+import android.view.inputmethod.InputMethodManager
 import androidx.appcompat.widget.AppCompatEditText
 
 class NoteEditText @JvmOverloads constructor(
@@ -28,6 +29,7 @@ class NoteEditText @JvmOverloads constructor(
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
 
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                if (ignoreTextChange) return
                 // If Enter key pressed, potentially add a checkbox
                 if (count == 1 && start > 0 && s != null && s[start] == '\n') {
                     post {
@@ -96,13 +98,18 @@ class NoteEditText @JvmOverloads constructor(
                     editable.removeSpan(span)
                 }
 
-                // Apply strikethrough
-                editable.setSpan(StrikethroughSpan(), lineStart, lineEnd, Editable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                // Apply strikethrough only if there's text after the checkbox
+                if (line.trim() != CHECKBOX_CHECKED.trim()) {
+                    editable.setSpan(StrikethroughSpan(), lineStart, lineEnd, Editable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                }
             } else if (line.startsWith(CHECKBOX_UNCHECKED)) {
                 val lineStart = position + CHECKBOX_UNCHECKED.length
                 val lineEnd = position + line.length
 
                 // Remove any strikethrough spans
+                // No strikethrough should be applied to unchecked items,
+                // but this ensures any incorrectly applied ones are removed.
+                // This also handles the case where an item is unchecked after being checked.
                 val spans = editable.getSpans(lineStart, lineEnd, StrikethroughSpan::class.java)
                 for (span in spans) {
                     editable.removeSpan(span)
@@ -112,27 +119,27 @@ class NoteEditText @JvmOverloads constructor(
         }
     }
 
-    fun insertCheckbox() {
-        val selStart = selectionStart
-        val editable = text ?: return
-
-        editable.insert(selStart, CHECKBOX_UNCHECKED)
-    }
-
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (event.action == MotionEvent.ACTION_UP) {
             val offset = getOffsetForPosition(event.x, event.y)
             val line = layout.getLineForOffset(offset)
             val lineStart = layout.getLineStart(line)
             val lineEnd = layout.getLineEnd(line)
-
             val text = text?.subSequence(lineStart, lineEnd).toString()
+
             if (text.startsWith(CHECKBOX_UNCHECKED) || text.startsWith(CHECKBOX_CHECKED)) {
-                toggleCheckbox(lineStart, lineEnd)
-                moveCheckedToBottom(lineStart, lineEnd)
-                return true // Consume the touch event
+                // if line has only checkbox and spaces, no strikethrough should apply, instead keyboard should open for display
+                if (text.trim() == CHECKBOX_UNCHECKED.trim() || text.trim() == CHECKBOX_CHECKED.trim()) {
+                    // Show keyboard and allow default touch handling
+                } else {
+                    toggleCheckbox(lineStart, lineEnd)
+                    return true // Consume the touch event only if we toggled a checkbox with content
+                }
             }
         }
+        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
+        requestFocus()
         return super.onTouchEvent(event)
     }
 
@@ -147,23 +154,6 @@ class NoteEditText @JvmOverloads constructor(
                 CHECKBOX_UNCHECKED + lineText.substring(2)
             else -> lineText
         })
-    }
-
-    private fun moveCheckedToBottom(lineStart: Int, lineEnd: Int) {
-        val editable = text ?: return
-        val lineText = editable.subSequence(lineStart, lineEnd)
-        val lineEndWithNewline = if (editable.getOrNull(lineEnd) == '\n') lineEnd + 1 else lineEnd
-
-        editable.delete(lineStart, lineEndWithNewline)
-        editable.append("\n$lineText")
-
-        // Update spans and formatting
-        post {
-            ignoreTextChange = true
-            applyStrikethroughToCheckedItems(editable)
-            formatTitle(editable)
-            ignoreTextChange = false
-        }
     }
 
     fun getTitleAndContent(): Pair<String, String> {
@@ -197,5 +187,31 @@ class NoteEditText @JvmOverloads constructor(
             applyStrikethroughToCheckedItems(editable)
         }
         ignoreTextChange = false
+    }
+
+    fun appendNewCheckbox() {
+        val editable = text ?: return // Get the editable text, or return if null
+
+        ignoreTextChange = true // Prevent afterTextChanged from firing for this direct manipulation
+
+        // Ensure there's a newline before adding the new checkbox if text is not empty
+        // and doesn't already end with a newline.
+        if (editable.isNotEmpty() && editable.last() != '\n') {
+            editable.append("\n")
+        }
+        editable.append("$CHECKBOX_UNCHECKED") // Append checkbox and a space
+
+        // Manually trigger formatting updates
+        formatTitle(editable)
+        applyStrikethroughToCheckedItems(editable)
+        ignoreTextChange = false
+
+        // Optionally, move cursor to the end or after the new checkbox
+        setSelection(editable.length)
+
+        // Bring up the keyboard
+        requestFocus()
+        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
     }
 }

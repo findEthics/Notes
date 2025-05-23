@@ -8,7 +8,7 @@
     android:background="@android:color/white"
     tools:context=".MainActivity">
 
-    <!-- Top Panel with Time, Notes title and Action buttons -->
+    <!-- Top Panel with title and Action buttons -->
     <LinearLayout
         android:id="@+id/topPanel"
         android:layout_width="match_parent"
