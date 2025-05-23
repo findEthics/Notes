@@ -1,6 +1,8 @@
 // NoteAdapter.kt
 package com.example.notes
 
+import android.text.SpannableStringBuilder
+import android.text.style.StyleSpan
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -32,7 +34,15 @@ class NoteAdapter(
 
         // Set note title
         val firstLineOfContent = note.content.lines().firstOrNull() ?: ""
-        holder.tvNoteTitle.text = "${note.title.ifEmpty { "Untitled Note" }}\n$firstLineOfContent"
+        val title = note.title.ifEmpty { "Untitled Note" }
+        val spannable = SpannableStringBuilder("$title\n$firstLineOfContent")
+        spannable.setSpan(
+            StyleSpan(android.graphics.Typeface.BOLD),
+            0,
+            title.length,
+            SpannableStringBuilder.SPAN_EXCLUSIVE_EXCLUSIVE
+        )
+        holder.tvNoteTitle.text = spannable
 
         // Handle selection mode
         if (selectionMode) {

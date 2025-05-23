@@ -122,7 +122,6 @@ class NoteEditText @JvmOverloads constructor(
             val text = text?.subSequence(lineStart, lineEnd).toString()
             if (text.startsWith(CHECKBOX_UNCHECKED) || text.startsWith(CHECKBOX_CHECKED)) {
                 toggleCheckbox(lineStart, lineEnd)
-//                handleTaskMovement(lineStart, lineEnd)
                 return true // Consume the touch event
             }
         }
