@@ -31,15 +31,15 @@ class NoteEditText @JvmOverloads constructor(
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 if (ignoreTextChange) return
                 // If Enter key pressed, potentially add a checkbox
-                if (count == 1 && start > 0 && s != null && s[start] == '\n') {
-                    post {
-                        val cursorPosition = selectionStart
-                        val editable = text
-                        if (editable != null && cursorPosition > 0) {
-                            editable.insert(cursorPosition, CHECKBOX_UNCHECKED)
-                        }
-                    }
-                }
+//                if (count == 1 && start > 0 && s != null && s[start] == '\n') {
+//                    post {
+//                        val cursorPosition = selectionStart
+//                        val editable = text
+//                        if (editable != null && cursorPosition > 0) {
+//                            editable.insert(cursorPosition, CHECKBOX_UNCHECKED)
+//                        }
+//                    }
+//                }
             }
 
             override fun afterTextChanged(s: Editable?) {
