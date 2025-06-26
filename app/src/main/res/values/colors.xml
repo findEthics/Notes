@@ -1,5 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- E-Ink optimized colors -->
+    <color name="eink_white">#FFFFFFFF</color>
+    <color name="eink_black">#FF000000</color>
+    <color name="eink_light_gray">#FFF5F5F5</color>
+    <color name="eink_dark_gray">#FF333333</color>
+    <color name="eink_medium_gray">#FF666666</color>
+    
+    <!-- Light theme colors -->
+    <color name="light_background">#FFFFFFFF</color>
+    <color name="light_surface">#FFF8F8F8</color>
+    <color name="light_text_primary">#FF000000</color>
+    <color name="light_text_secondary">#FF666666</color>
+    <color name="light_accent">#FF1976D2</color>
+    
+    <!-- Dark theme colors -->
+    <color name="dark_background">#FF121212</color>
+    <color name="dark_surface">#FF1E1E1E</color>
+    <color name="dark_text_primary">#FFFFFFFF</color>
+    <color name="dark_text_secondary">#FFAAAAAA</color>
+    <color name="dark_accent">#FF64B5F6</color>
+    
+    <!-- Legacy colors -->
     <color name="purple_200">#FFBB86FC</color>
     <color name="purple_500">#FF6200EE</color>
     <color name="purple_700">#FF3700B3</color>

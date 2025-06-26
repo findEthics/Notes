@@ -1,0 +1,4 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Dark Theme for Night Mode -->
+    <style name="Theme.EInkNotes" parent="Theme.EInkNotes.Dark" />
+</resources>

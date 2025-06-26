@@ -7,7 +7,7 @@
     android:paddingStart="16dp"
     android:paddingEnd="16dp"
     android:gravity="center_vertical"
-    android:background="@android:color/white">
+    android:background="?android:attr/colorBackground">
 
     <!-- Checkbox (hidden by default, shown in selection mode) -->
     <CheckBox
@@ -25,7 +25,7 @@
             android:id="@+id/tvNoteTitle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textColor="@android:color/black"
+            android:textColor="?android:attr/textColorPrimary"
             android:textSize="20sp"
             android:paddingBottom="8dp"
             android:maxLines="2"/>

@@ -3,25 +3,25 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@android:color/white">
+    android:background="?android:attr/colorBackground">
 
     <!-- Top bar with time and Done button -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:background="#FFFFFF"
+        android:background="?attr/colorSurface"
         android:padding="8dp">
 
         <TextView
             android:id="@+id/tvNotesLabel"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
             android:layout_weight="1"
             android:layout_height="match_parent"
             android:text="@string/app_name"
             android:textSize="24sp"
             android:textStyle="bold"
-            android:textColor="@android:color/black"
+            android:textColor="?attr/colorOnSurface"
             android:gravity="start|center" />
 
         <!-- Spacer to push items to the right -->
@@ -32,8 +32,8 @@
 
         <ImageButton
             android:id="@+id/btnAddCheckBox"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
             android:src="@drawable/ic_check_box"
             android:background="?android:attr/selectableItemBackground"
             android:contentDescription="Add Checkbox"
@@ -46,15 +46,15 @@
             android:layout_height="wrap_content"
             android:text="Done"
             android:textStyle="bold"
-            android:textColor="@android:color/white"
-            android:backgroundTint="@color/black" />
+            android:textColor="?attr/colorOnPrimary"
+            android:backgroundTint="?attr/colorPrimary" />
     </LinearLayout>
 
     <!-- Bold horizontal divider line -->
     <View
         android:layout_width="match_parent"
         android:layout_height="3dp"
-        android:background="@android:color/black" />
+        android:background="?attr/colorOnSurface" />
 
     <!-- Note content area -->
     <com.example.notes.NoteEditText
@@ -67,6 +67,7 @@
         android:background="@null"
         android:hint="Title\n\nContent"
         android:inputType="textNoSuggestions|textMultiLine"
-        android:textColor="@android:color/black"
+        android:textColor="?android:attr/textColorPrimary"
+        android:textColorHint="?android:attr/textColorSecondary"
         android:textSize="24sp" />
 </LinearLayout>
