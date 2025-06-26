@@ -4,12 +4,12 @@ package com.example.notes
 import android.os.Bundle
 import android.widget.Button
 import android.widget.ImageButton
-import android.widget.TextView
+import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
-import com.example.notes.DatabaseHelper
-import com.example.notes.NoteEditText
-import com.example.notes.R
-import java.util.*
+import com.example.notes.repository.NotesRepositoryImpl
+import com.example.notes.theme.ThemeManager
+import com.example.notes.viewmodel.NoteViewModel
+import com.example.notes.viewmodel.NoteViewModelFactory
 
 class NoteActivity : AppCompatActivity() {
 
@@ -17,19 +17,20 @@ class NoteActivity : AppCompatActivity() {
         const val EXTRA_NOTE_ID = "extra_note_id"
     }
 
-    private lateinit var dbHelper: DatabaseHelper
     private lateinit var noteEditText: NoteEditText
-    private var noteId: Long = -1
-
     private lateinit var btnDone: Button
     private lateinit var btnAddCheckBox: ImageButton
 
+    private val viewModel: NoteViewModel by viewModels {
+        NoteViewModelFactory(NotesRepositoryImpl(DatabaseHelper(this)))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Initialize theme before setting content view
+        ThemeManager.initializeTheme(this)
+        
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_note_edit)
-
-        // Initialize SQLite helper
-        dbHelper = DatabaseHelper(this)
 
         // Initialize UI components
         btnDone = findViewById(R.id.btnDone)
@@ -37,14 +38,17 @@ class NoteActivity : AppCompatActivity() {
         btnAddCheckBox = findViewById(R.id.btnAddCheckBox)
 
         // Get note ID from intent
-        noteId = intent.getLongExtra(EXTRA_NOTE_ID, -1)
+        val noteId = intent.getLongExtra(EXTRA_NOTE_ID, -1)
         if (noteId == -1L) {
             finish()
             return
         }
 
         // Load note content
-        loadNote()
+        viewModel.loadNote(noteId)
+        
+        // Setup observers
+        setupObservers()
 
         // Set click listeners
         btnDone.setOnClickListener {
@@ -62,28 +66,25 @@ class NoteActivity : AppCompatActivity() {
         // Save note when leaving the activity
         saveNote()
     }
-
-    private fun loadNote() {
-        val note = dbHelper.getNoteById(noteId)
-        if (note != null) {
-            noteEditText.setTitleAndContent(note.title, note.content)
+    
+    private fun setupObservers() {
+        // Observe current note
+        viewModel.currentNote.observe(this) { note ->
+            note?.let {
+                noteEditText.setTitleAndContent(it.title, it.content)
+            }
         }
-
-        // Set focus to the beginning if it's a new note
-        if (note?.title.isNullOrEmpty() && note?.content.isNullOrEmpty()) {
-            noteEditText.requestFocus()
+        
+        // Observe if it's a new note
+        viewModel.isNewNote.observe(this) { isNewNote ->
+            if (isNewNote) {
+                noteEditText.requestFocus()
+            }
         }
     }
 
     private fun saveNote() {
         val (title, content) = noteEditText.getTitleAndContent()
-
-        // Only save if there's actual content
-        if (title.isNotEmpty() || content.isNotEmpty()) {
-            dbHelper.updateNote(noteId, title, content)
-        } else {
-            // Delete empty notes
-            dbHelper.deleteNotes(listOf(noteId))
-        }
+        viewModel.saveNote(title, content)
     }
 }

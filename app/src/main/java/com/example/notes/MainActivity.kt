@@ -5,61 +5,77 @@ import android.os.Bundle
 import android.view.View
 import android.widget.Button
 import android.widget.ImageButton
+import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
-import androidx.recyclerview.widget.DividerItemDecoration
+import androidx.lifecycle.Observer
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.example.notes.repository.NotesRepositoryImpl
+import com.example.notes.theme.ThemeManager
+import com.example.notes.viewmodel.MainViewModel
+import com.example.notes.viewmodel.MainViewModelFactory
 
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var dbHelper: DatabaseHelper
     private lateinit var noteAdapter: NoteAdapter
-
     private lateinit var ibAddNote: ImageButton
     private lateinit var ibEditNotes: ImageButton
+    private lateinit var ibThemeToggle: ImageButton
     private lateinit var rvNotes: RecyclerView
     private lateinit var btnDelete: Button
 
-    private var isInSelectionMode = false
+    private val viewModel: MainViewModel by viewModels {
+        MainViewModelFactory(NotesRepositoryImpl(DatabaseHelper(this)))
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Initialize theme before setting content view
+        ThemeManager.initializeTheme(this)
+        
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-
-        // Initialize SQLite helper
-        dbHelper = DatabaseHelper(this)
 
         // Initialize UI components
         ibAddNote = findViewById(R.id.ibAddNote)
         ibEditNotes = findViewById(R.id.ibEditNotes)
+        ibThemeToggle = findViewById(R.id.ibThemeToggle)
         rvNotes = findViewById(R.id.rvNotes)
         btnDelete = findViewById(R.id.btnDelete)
 
         // Setup RecyclerView
         setupRecyclerView()
+        
+        // Setup observers
+        setupObservers()
+        
+        // Update theme toggle button icon
+        updateThemeToggleIcon()
 
         // Set click listeners
         ibAddNote.setOnClickListener {
-            // Create a new empty note
-            val noteId = dbHelper.insertNote("", "")
-            openNoteEditor(noteId)
+            viewModel.createNewNote { noteId ->
+                openNoteEditor(noteId)
+            }
         }
 
         ibEditNotes.setOnClickListener {
-            toggleSelectionMode()
+            viewModel.toggleSelectionMode()
+        }
+        
+        ibThemeToggle.setOnClickListener {
+            ThemeManager.toggleTheme(this)
+            updateThemeToggleIcon()
         }
 
         btnDelete.setOnClickListener {
             deleteSelectedNotes()
         }
- // Update every minute
     }
 
     override fun onResume() {
         super.onResume()
-        loadNotes()
+        viewModel.refreshNotes()
     }
-
 
     private fun setupRecyclerView() {
         noteAdapter = NoteAdapter(emptyList()) { note ->
@@ -69,15 +85,24 @@ class MainActivity : AppCompatActivity() {
         rvNotes.apply {
             layoutManager = LinearLayoutManager(this@MainActivity)
             adapter = noteAdapter
-//            addItemDecoration(DividerItemDecoration(this@MainActivity, DividerItemDecoration.VERTICAL))
         }
-
-        loadNotes()
     }
-
-    private fun loadNotes() {
-        val notes = dbHelper.getAllNotes()
-        noteAdapter.updateNotes(notes)
+    
+    private fun setupObservers() {
+        // Observe notes list
+        viewModel.allNotes.observe(this) { notes ->
+            noteAdapter.updateNotes(notes)
+        }
+        
+        // Observe selection mode
+        viewModel.isSelectionMode.observe(this) { isSelectionMode ->
+            noteAdapter.toggleSelectionMode(isSelectionMode)
+        }
+        
+        // Observe delete button visibility
+        viewModel.deleteButtonVisibility.observe(this) { isVisible ->
+            btnDelete.visibility = if (isVisible) View.VISIBLE else View.GONE
+        }
     }
 
     private fun openNoteEditor(noteId: Long) {
@@ -87,18 +112,14 @@ class MainActivity : AppCompatActivity() {
         startActivity(intent)
     }
 
-    private fun toggleSelectionMode() {
-        isInSelectionMode = !isInSelectionMode
-        noteAdapter.toggleSelectionMode(isInSelectionMode)
-        btnDelete.visibility = if (isInSelectionMode) View.VISIBLE else View.GONE
-    }
-
     private fun deleteSelectedNotes() {
         val selectedIds = noteAdapter.getSelectedNoteIds()
-        if (selectedIds.isNotEmpty()) {
-            dbHelper.deleteNotes(selectedIds)
-            loadNotes()
-            toggleSelectionMode() // Exit selection mode
-        }
+        viewModel.deleteSelectedNotes(selectedIds)
+    }
+    
+    private fun updateThemeToggleIcon() {
+        val isDarkMode = ThemeManager.isDarkMode(this)
+        val iconRes = if (isDarkMode) R.drawable.ic_light_mode else R.drawable.ic_dark_mode
+        ibThemeToggle.setImageResource(iconRes)
     }
 }

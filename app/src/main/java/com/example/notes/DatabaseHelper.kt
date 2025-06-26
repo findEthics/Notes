@@ -50,7 +50,6 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         values.put(COLUMN_TIMESTAMP, getCurrentTimestamp())
 
         val id = db.insert(TABLE_NOTES, null, values)
-        db.close()
         return id
     }
 
@@ -71,7 +70,6 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             } while (cursor.moveToNext())
         }
         cursor.close()
-        db.close()
         return notesList
     }
 
@@ -93,7 +91,6 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             note = Note(id, title, content, timestamp)
         }
         cursor.close()
-        db.close()
         return note
     }
 
@@ -105,7 +102,6 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         values.put(COLUMN_TIMESTAMP, getCurrentTimestamp())
 
         val result = db.update(TABLE_NOTES, values, "$COLUMN_ID=?", arrayOf(id.toString()))
-        db.close()
         return result
     }
 
@@ -117,7 +113,6 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
             deletedCount += db.delete(TABLE_NOTES, "$COLUMN_ID=?", arrayOf(id.toString()))
         }
 
-        db.close()
         return deletedCount
     }
 
