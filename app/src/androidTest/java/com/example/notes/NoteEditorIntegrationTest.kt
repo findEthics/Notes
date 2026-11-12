@@ -1,0 +1,385 @@
+package com.example.notes
+
+import android.app.UiModeManager
+import android.content.Context
+import android.content.Intent
+import android.content.res.Configuration
+import android.os.SystemClock
+import android.view.KeyEvent
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.test.core.app.ActivityScenario
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import org.junit.*
+import org.junit.Assert.*
+import org.junit.runner.RunWith
+import java.util.UUID
+
+@RunWith(AndroidJUnit4::class)
+class NoteEditorIntegrationTest {
+    @get:Rule val compose = createEmptyComposeRule()
+    private val instrumentation = InstrumentationRegistry.getInstrumentation()
+    private val context = instrumentation.targetContext
+    private val helper = DatabaseHelper(context)
+    private val ids = mutableListOf<Long>()
+    @After fun cleanup() { helper.deleteNotes(ids); helper.close() }
+    private fun editor(title: String = "", body: String = "", action: (ActivityScenario<MainActivity>, Long) -> Unit) {
+        val id = helper.insertNote(title, body); ids.add(id)
+        launchNote(id).use { action(it, id) }
+    }
+    private fun text() = compose.onNodeWithTag("note-text")
+    private fun loaded() = compose.waitUntil(10000) { compose.onAllNodesWithTag("note-text").fetchSemanticsNodes().isNotEmpty() }
+    private fun key(code: Int, meta: Int = 0, repeat: Int = 0) {
+        compose.waitForIdle()
+        val now = SystemClock.uptimeMillis()
+        instrumentation.sendKeySync(KeyEvent(now, now, KeyEvent.ACTION_DOWN, code, repeat, meta))
+        instrumentation.sendKeySync(KeyEvent(now, now, KeyEvent.ACTION_UP, code, 0, meta))
+        instrumentation.waitForIdleSync()
+    }
+    private fun screenshot(name: String) {
+        compose.waitForIdle()
+        instrumentation.uiAutomation.waitForIdle(200, 3000)
+        instrumentation.uiAutomation.takeScreenshot().apply {
+            java.io.File(context.getExternalFilesDir(null), name).outputStream().use { compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+            recycle()
+        }
+    }
+    private fun layout(): TextLayoutResult {
+        val list = mutableListOf<TextLayoutResult>()
+        text().performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(list) }
+        return list.single()
+    }
+    private fun ime(scenario: ActivityScenario<MainActivity>): Int {
+        var bottom = 0
+        scenario.onActivity { bottom = it.window.decorView.rootWindowInsets.getInsets(android.view.WindowInsets.Type.ime()).bottom }
+        return bottom
+    }
+    @Test fun newAndExistingNotesImmediatelyFocusInputShowImeAndKeepControlsSeparate() {
+        for (existing in listOf(false, true)) editor(if (existing) "Existing note" else "", if (existing) "Body" else "") { scenario, _ ->
+            loaded()
+            compose.waitUntil(10000) { text().fetchSemanticsNode().config[SemanticsProperties.Focused] }
+            text().assertIsFocused()
+            compose.waitUntil(10000) { ime(scenario) > 0 }
+            val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
+            compose.onNodeWithTag("settings").assertDoesNotExist()
+            compose.onNodeWithTag("create").assertDoesNotExist()
+            compose.onNodeWithTag("section-panel").assertDoesNotExist()
+            val input = text().assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            val viewport = compose.onNodeWithTag("note-viewport").fetchSemanticsNode().boundsInRoot
+            val density = context.resources.displayMetrics.density
+            assertEquals("Left gutter", 16f * density, input.left - viewport.left, 1f)
+            assertEquals("Right gutter", 16f * density, viewport.right - input.right, 1f)
+            assertTrue("Input reclaims header height", input.top <= viewport.top + 1)
+            assertTrue("Usable bounded viewport", viewport.height >= 48 * density)
+            val footer = compose.onNodeWithTag("note-actions").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            assertTrue("Viewport clears fixed footer", viewport.bottom <= footer.top + 1)
+            assertTrue("Footer stays above IME", footer.bottom <= root.bottom - ime(scenario) + 1)
+            for (tag in listOf("insert-checkbox", "font-picker", "leave-input", "done")) {
+                compose.onNodeWithTag(tag).assertIsDisplayed().assertHeightIsAtLeast(48.dp).assertWidthIsAtLeast(48.dp)
+            }
+            assertEquals(if (existing) "Existing note\nBody" else "",
+                text().fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
+            if (!existing) compose.onNodeWithText("Note", useUnmergedTree = true).assertExists()
+            assertEquals(20.sp, layout().layoutInput.style.fontSize)
+            if (existing) assertEquals(28.sp, layout().layoutInput.text.spanStyles.first().item.fontSize)
+            screenshot(if (existing) "note-existing-ime.png" else "note-new-ime.png")
+            compose.onNodeWithTag("leave-input").performClick()
+            text().assertIsNotFocused()
+            compose.onNodeWithTag("done").assertIsFocused()
+            screenshot("note-unfocused.png")
+        }
+    }
+    @Test fun nativeUppercaseSelectionTabDpadAndEnterSpaceKeepEditingSafe() = editor { _, _ ->
+        loaded(); text().performTextReplacement("normal")
+        val notes = navigationMonitor(NoteScreen::class.java.name)
+        val tasks = navigationMonitor(TaskScreen::class.java.name)
+        try {
+            key(KeyEvent.KEYCODE_N, KeyEvent.META_SHIFT_ON)
+            key(KeyEvent.KEYCODE_T, KeyEvent.META_SHIFT_ON)
+            compose.waitUntil(5000) { text().fetchSemanticsNode().config[SemanticsProperties.EditableText].text.contains("NT") }
+            text().assertTextContains("NT", substring = true)
+            key(KeyEvent.KEYCODE_A, KeyEvent.META_CTRL_ON)
+            val range = text().fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange]
+            assertTrue(range.start != range.end)
+            assertEquals(0, notes.hits); assertEquals(0, tasks.hits)
+            key(KeyEvent.KEYCODE_TAB); compose.onNodeWithTag("font-picker").assertIsFocused()
+            key(KeyEvent.KEYCODE_TAB, KeyEvent.META_SHIFT_ON); text().assertIsFocused()
+            compose.onNodeWithTag("leave-input").performClick(); compose.onNodeWithTag("done").assertIsFocused()
+            key(KeyEvent.KEYCODE_TAB, KeyEvent.META_SHIFT_ON)
+            compose.onNodeWithTag("insert-checkbox").assertIsFocused()
+            key(KeyEvent.KEYCODE_SPACE)
+            text().assertIsFocused().assertTextContains("☐ ", substring = true)
+            key(KeyEvent.KEYCODE_ESCAPE)
+        } finally { notes.close(); tasks.close() }
+    }
+    @Test fun allFourOutsideInputShortcutsSaveFirstAndRejectExtraModifiersAndRepeats() {
+        for (code in listOf(KeyEvent.KEYCODE_N, KeyEvent.KEYCODE_T)) for (meta in listOf(KeyEvent.META_ALT_ON, KeyEvent.META_SHIFT_ON)) {
+            editor("shortcuts-${UUID.randomUUID()}", "Before") { _, id ->
+                loaded(); text().performTextReplacement("saved-$code-$meta\nBody")
+                compose.onNodeWithTag("leave-input").performClick()
+                val target = if (code == KeyEvent.KEYCODE_N) NoteScreen::class.java else TaskScreen::class.java
+                val monitor = navigationMonitor(target.name)
+                try {
+                    key(code, meta, 1); assertEquals(0, monitor.hits)
+                    key(code, meta or KeyEvent.META_CTRL_ON); assertEquals(0, monitor.hits)
+                    key(code, meta)
+                    val opened = monitor.await()
+                    assertNotNull(opened)
+                    assertEquals("saved-$code-$meta", helper.getNoteById(id)!!.title)
+                    instrumentation.runOnMainSync { opened!!.closeEditor() }
+                    instrumentation.waitForIdleSync()
+                } finally { monitor.close() }
+            }
+        }
+    }
+    @Test fun longDraftScrollsCaretIntoViewWithoutMovingFooter() = editor("Long note", "body") { scenario, _ ->
+        loaded(); compose.waitUntil(10000) { ime(scenario) > 0 }
+        compose.waitUntil(10000) {
+            compose.onNodeWithTag("note-actions").fetchSemanticsNode().boundsInRoot.bottom <=
+                compose.onRoot().fetchSemanticsNode().boundsInRoot.bottom - ime(scenario) + 1
+        }
+        val raw = "Title\n" + "line\n".repeat(80) + "end"
+        val before = compose.onNodeWithTag("note-actions").fetchSemanticsNode().boundsInRoot
+        text().performTextReplacement(raw)
+        text().performSemanticsAction(SemanticsActions.SetSelection) { it(raw.length, raw.length, false) }
+        compose.waitUntil(10000) {
+            val node = text().fetchSemanticsNode()
+            val cursor = layout().getCursorRect(raw.length)
+            val viewport = compose.onNodeWithTag("note-viewport").fetchSemanticsNode().boundsInRoot
+            node.positionInRoot.y + cursor.top >= viewport.top - 1 &&
+                node.positionInRoot.y + cursor.bottom <= viewport.bottom + 1
+        }
+        screenshot("long-draft-caret.png")
+        text().assertTextEquals(raw)
+        assertEquals(before, compose.onNodeWithTag("note-actions").fetchSemanticsNode().boundsInRoot)
+        compose.onNodeWithTag("insert-checkbox").performClick()
+        text().assertIsFocused().assertTextEquals(raw.removeSuffix("end") + "☐ end")
+    }
+    @Test fun imeCompositionCopyPasteAndSettingsShortcutGateUseActiveInput() = editor { scenario, _ ->
+        loaded()
+        text().performTextClearance()
+        scenario.onActivity {
+            val connection = checkNotNull(it.window.decorView.findFocus().onCreateInputConnection(android.view.inputmethod.EditorInfo()))
+            connection.setComposingText("draft", 1)
+            connection.setComposingText("drafted", 1)
+            connection.finishComposingText()
+            connection.commitText("!", 1)
+        }
+        text().assertTextEquals("drafted!")
+        key(KeyEvent.KEYCODE_A, KeyEvent.META_CTRL_ON)
+        key(KeyEvent.KEYCODE_C, KeyEvent.META_CTRL_ON)
+        key(KeyEvent.KEYCODE_DPAD_RIGHT)
+        key(KeyEvent.KEYCODE_V, KeyEvent.META_CTRL_ON)
+        compose.waitUntil(5000) { text().fetchSemanticsNode().config[SemanticsProperties.EditableText].text == "drafted!drafted!" }
+        text().assertTextEquals("drafted!drafted!")
+        val notes = navigationMonitor(NoteScreen::class.java.name)
+        val tasks = navigationMonitor(TaskScreen::class.java.name)
+        try {
+            for (code in listOf(KeyEvent.KEYCODE_N, KeyEvent.KEYCODE_T)) for (meta in listOf(KeyEvent.META_ALT_ON, KeyEvent.META_SHIFT_ON)) key(code, meta)
+            assertEquals(0, notes.hits); assertEquals(0, tasks.hits)
+            compose.onNodeWithTag("font-picker").performClick()
+            for (code in listOf(KeyEvent.KEYCODE_N, KeyEvent.KEYCODE_T)) for (meta in listOf(KeyEvent.META_ALT_ON, KeyEvent.META_SHIFT_ON)) key(code, meta)
+            assertEquals(0, notes.hits); assertEquals(0, tasks.hits)
+            compose.onNode(hasText("Done") and hasAnyAncestor(isDialog())).performClick()
+        } finally { notes.close(); tasks.close() }
+    }
+
+    @Test fun fontsImmediatelyApplyPersistAndDoNotResetSelectionAndDarkSurfacesAndBars() {
+        val old = FontSettings(context).use { it.choice }
+        val mode = context.getSystemService(UiModeManager::class.java)
+        try {
+            editor("Fonts", "☑ Checked\nBody") { scenario, _ ->
+                loaded()
+                for (choice in FontChoice.entries) {
+                    text().performSemanticsAction(SemanticsActions.SetSelection) { it(1, 3, false) }
+                    compose.onNodeWithTag("font-picker").performClick()
+                    compose.onNodeWithTag("font-${choice.name}").performScrollTo().performClick().assertIsSelected()
+                    compose.onNode(hasText("Done") and hasAnyAncestor(isDialog())).performClick()
+                    assertEquals(TextRange(1, 3), text().fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+                    assertEquals(choice, FontSettings(context).use { it.choice })
+                    if (choice == FontChoice.MONOSPACE) assertEquals(FontFamily.Monospace, layout().layoutInput.style.fontFamily)
+                    scenario.recreate(); loaded()
+                    compose.waitUntil(10000) {
+                        text().fetchSemanticsNode().config[SemanticsProperties.Focused] && ime(scenario) > 0
+                    }
+                    assertEquals(TextRange(1, 3), text().fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+                }
+                compose.onNodeWithTag("leave-input").performClick()
+                compose.waitUntil(10000) { ime(scenario) == 0 }
+                screenshot("note-light.png")
+                compose.onNodeWithTag("font-picker").performClick()
+                screenshot("note-light-settings.png")
+                compose.onNode(hasText("Done") and hasAnyAncestor(isDialog())).performClick()
+                mode.setApplicationNightMode(UiModeManager.MODE_NIGHT_YES)
+                compose.waitUntil(10000) {
+                    var dark = false
+                    scenario.onActivity { dark = it.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES }
+                    dark
+                }
+                loaded()
+                compose.waitUntil(10000) { layout().layoutInput.style.color == androidx.compose.ui.graphics.Color.White || layout().layoutInput.style.color.luminanceForTest() > 0.5f }
+                scenario.onActivity {
+                    val controller = androidx.core.view.WindowCompat.getInsetsController(it.window, it.window.decorView)
+                    assertFalse(controller.isAppearanceLightStatusBars)
+                    assertFalse(controller.isAppearanceLightNavigationBars)
+                }
+                compose.onNodeWithTag("leave-input").performClick()
+                compose.waitUntil(10000) { ime(scenario) == 0 }
+                screenshot("note-dark.png")
+                compose.onNodeWithTag("font-picker").performClick()
+                compose.waitUntil(10000) { ime(scenario) == 0 }
+                screenshot("note-dark-settings.png")
+                compose.onNode(hasText("Done") and hasAnyAncestor(isDialog())).performClick()
+            }
+        } finally { mode.setApplicationNightMode(UiModeManager.MODE_NIGHT_AUTO); FontSettings(context).use { it.select(old) } }
+    }
+    @Test fun doneSavesWithoutEditorNavigationChrome() = editor("Navigation", "Before") { scenario, id ->
+        loaded(); text().performTextReplacement("Navigation\nSaved before Done")
+        compose.onNodeWithTag("section-panel").assertDoesNotExist()
+        compose.onNodeWithTag("create").assertDoesNotExist()
+        compose.onNodeWithTag("done").performClick()
+        compose.waitUntil(5000) { compose.onAllNodesWithTag("items").fetchSemanticsNodes().isNotEmpty() }
+        assertEquals("Saved before Done", helper.getNoteById(id)!!.content)
+    }
+
+    @Test fun hardwareChecklistEnterBackspaceToggleAndShiftEnter() = editor { scenario, _ ->
+        // Deliver hardware events to the app: this emulator's IME converts injected Enter to commitText.
+        fun hardwareKey(code: Int, meta: Int = 0) {
+            compose.waitForIdle()
+            scenario.onActivity {
+                val now = SystemClock.uptimeMillis()
+                it.dispatchKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, code, 0, meta))
+                it.dispatchKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, code, 0, meta))
+            }
+            compose.waitForIdle()
+        }
+        loaded()
+        text().performTextReplacement("Title\n☑ milk\nlast")
+        text().performSemanticsAction(SemanticsActions.SetSelection) { it(10, 10, false) }
+        hardwareKey(KeyEvent.KEYCODE_ENTER)
+        text().assertTextEquals("Title\n☑ mi\n☐ lk\nlast")
+        assertEquals(TextRange(13), text().fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+        key(KeyEvent.KEYCODE_D, KeyEvent.META_CTRL_ON)
+        text().assertTextEquals("Title\n☑ mi\n☑ lk\nlast")
+        key(KeyEvent.KEYCODE_D, KeyEvent.META_CTRL_ON)
+        text().assertTextEquals("Title\n☑ mi\n☐ lk\nlast")
+        text().performTextReplacement("☐ task")
+        hardwareKey(KeyEvent.KEYCODE_ENTER, KeyEvent.META_SHIFT_ON)
+        text().assertTextEquals("☐ task\n")
+        key(KeyEvent.KEYCODE_D, KeyEvent.META_CTRL_ON)
+        text().assertTextEquals("☐ task\n☐ ")
+        hardwareKey(KeyEvent.KEYCODE_DEL)
+        text().assertTextEquals("☐ task\n")
+        key(KeyEvent.KEYCODE_D, KeyEvent.META_CTRL_ON)
+        hardwareKey(KeyEvent.KEYCODE_ENTER)
+        text().assertTextEquals("☐ task\n")
+        hardwareKey(KeyEvent.KEYCODE_ENTER)
+        text().assertTextEquals("☐ task\n\n")
+        text().performTextReplacement("☐ task")
+        hardwareKey(KeyEvent.KEYCODE_ENTER)
+        text().assertTextEquals("☐ task\n☐ ")
+        key(KeyEvent.KEYCODE_Z, KeyEvent.META_CTRL_ON)
+        text().assertTextEquals("☐ task")
+    }
+
+    @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+    @Test fun stateUndoRestoresExactTextAndSelectionForEveryChecklistAction() {
+        val before = EditorText("☐ task", TextRange(6))
+        val state = androidx.compose.foundation.text.input.TextFieldState(before.text, before.selection)
+        for (action in listOf<(EditorText) -> EditorText?>(
+            { noteChecklistEnter(it) }, { insertNoteCheckbox(it, toggle = true) },
+            { notePlainNewline(it) })) {
+            state.editNote(action)
+            state.undoState.undo()
+            assertEquals(before, state.editorText())
+            state.undoState.redo()
+            assertNotEquals(before.text, state.text.toString())
+            state.undoState.undo()
+        }
+        state.edit { applyEditorText(EditorText("☐ ", TextRange(2))) }
+        state.undoState.clearHistory()
+        state.editNote(::noteChecklistBackspace)
+        state.undoState.undo()
+        assertEquals(EditorText("☐ ", TextRange(2)), state.editorText())
+        state.editNote { insertNoteCheckbox(it) }
+        assertEquals(EditorText("☐ ", TextRange(2)), state.editorText())
+        state.edit { applyEditorText(EditorText("task", TextRange(1, 3))) }
+        state.undoState.clearHistory()
+        state.editNote { insertNoteCheckbox(it) }
+        state.undoState.undo()
+        assertEquals(EditorText("task", TextRange(1, 3)), state.editorText())
+    }
+
+    @Test fun imeChecklistContinuationPasteAndUndoRedo() = editor { scenario, _ ->
+        fun commit(value: String) {
+            scenario.onActivity {
+                val connection = checkNotNull(it.window.decorView.findFocus()
+                    .onCreateInputConnection(android.view.inputmethod.EditorInfo()))
+                connection.commitText(value, 1)
+            }
+            compose.waitForIdle()
+        }
+        fun undo() = key(KeyEvent.KEYCODE_Z, KeyEvent.META_CTRL_ON)
+        loaded(); text().performTextReplacement("☐ task")
+        commit("\n"); text().assertTextEquals("☐ task\n☐ ")
+        undo(); text().assertTextEquals("☐ task")
+        key(KeyEvent.KEYCODE_Z, KeyEvent.META_CTRL_ON or KeyEvent.META_SHIFT_ON)
+        text().assertTextEquals("☐ task\n☐ ")
+        key(KeyEvent.KEYCODE_D, KeyEvent.META_CTRL_ON)
+        text().assertTextEquals("☐ task\n☑ ")
+        undo(); text().assertTextEquals("☐ task\n☐ ")
+        key(KeyEvent.KEYCODE_DEL); text().assertTextEquals("☐ task\n")
+        undo(); text().assertTextEquals("☐ task\n☐ ")
+        commit("a\nb"); text().assertTextEquals("☐ task\n☐ a\nb")
+        undo(); text().assertTextEquals("☐ task\n☐ ")
+        commit("\n"); text().assertTextEquals("☐ task\n")
+        undo(); text().assertTextEquals("☐ task\n☐ ")
+    }
+
+    @Test fun ctrlSaveStaysAndEscapeOrAltEnterClosesWithSavedText() {
+        for (close in listOf(KeyEvent.KEYCODE_ESCAPE to 0, KeyEvent.KEYCODE_ENTER to KeyEvent.META_ALT_ON)) {
+            editor("Original", "body") { scenario, id ->
+                loaded(); text().performTextReplacement("Saved\nctrl")
+                key(KeyEvent.KEYCODE_S, KeyEvent.META_CTRL_ON)
+                assertEquals(androidx.lifecycle.Lifecycle.State.RESUMED, scenario.state)
+                text().assertIsFocused()
+                assertEquals("ctrl", helper.getNoteById(id)!!.content)
+                text().performTextReplacement("Saved\nclosed")
+                key(close.first, close.second)
+                compose.waitUntil(5000) { compose.onAllNodesWithTag("items").fetchSemanticsNodes().isNotEmpty() }
+                assertEquals("closed", helper.getNoteById(id)!!.content)
+            }
+        }
+    }
+
+    @Test fun checklistEditingKeepsNativeSelectionPasteCompositionAndUndo() = editor { scenario, _ ->
+        loaded(); text().performTextReplacement("☐ task")
+        text().performSemanticsAction(SemanticsActions.SetSelection) { it(2, 6, false) }
+        key(KeyEvent.KEYCODE_ENTER)
+        text().assertTextEquals("☐ \n")
+        text().performTextReplacement("☐ ")
+        scenario.onActivity {
+            val connection = checkNotNull(it.window.decorView.findFocus().onCreateInputConnection(android.view.inputmethod.EditorInfo()))
+            connection.commitText("pasted\n☑ line", 1)
+        }
+        text().assertTextEquals("☐ pasted\n☑ line")
+        key(KeyEvent.KEYCODE_Z, KeyEvent.META_CTRL_ON)
+        text().assertTextEquals("☐ ")
+        scenario.onActivity {
+            val connection = checkNotNull(it.window.decorView.findFocus().onCreateInputConnection(android.view.inputmethod.EditorInfo()))
+            connection.setComposingText("draft", 1)
+        }
+        key(KeyEvent.KEYCODE_D, KeyEvent.META_CTRL_ON)
+        text().assertTextEquals("☑ draft")
+    }
+}
+
+private fun androidx.compose.ui.graphics.Color.luminanceForTest(): Float = (red + green + blue) / 3f

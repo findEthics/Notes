@@ -1,0 +1,7 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:name="paper" android:pathData="M39,30H59L70,41V73Q70,77 66,77H39Q35,77 35,73V34Q35,30 39,30Z" android:fillColor="#FFF8E7"/>
+    <path android:name="fold" android:pathData="M59,30V41H70" android:fillColor="#FFF8E7" android:strokeColor="#123B3A" android:strokeWidth="3" android:strokeLineCap="round" android:strokeLineJoin="round"/>
+    <path android:name="lines" android:pathData="M43,47H58M43,54H52" android:fillColor="@android:color/transparent" android:strokeColor="#123B3A" android:strokeWidth="3" android:strokeLineCap="round" android:strokeLineJoin="round"/>
+    <path android:name="check" android:pathData="M49,62L56,69L74,49" android:fillColor="@android:color/transparent" android:strokeColor="#123B3A" android:strokeWidth="7" android:strokeLineCap="round" android:strokeLineJoin="round"/>
+    <path android:name="check-accent" android:pathData="M49,62L56,69L74,49" android:fillColor="@android:color/transparent" android:strokeColor="#80D5BC" android:strokeWidth="3" android:strokeLineCap="round" android:strokeLineJoin="round"/>
+</vector>

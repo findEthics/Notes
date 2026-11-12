@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="108" height="108" viewBox="0 0 108 108">
+  <title>Notes: folded page and completed check</title>
+  <desc>Original geometric drawing. 108 unit adaptive canvas; foreground inside central 66 unit safe circle.</desc>
+  <path id="background" fill="#123B3A" d="M0,0H108V108H0Z"/>
+  <path id="paper" d="M39,30H59L70,41V73Q70,77 66,77H39Q35,77 35,73V34Q35,30 39,30Z" fill="#FFF8E7"/>
+  <path id="fold" d="M59,30V41H70" fill="#FFF8E7" stroke="#123B3A" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path id="lines" d="M43,47H58M43,54H52" fill="none" stroke="#123B3A" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path id="check" d="M49,62L56,69L74,49" fill="none" stroke="#123B3A" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path id="check-accent" d="M49,62L56,69L74,49" fill="none" stroke="#80D5BC" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
