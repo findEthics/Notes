@@ -50,6 +50,7 @@ internal class NoteScreen(
     private var error by mutableStateOf<String?>(null)
     private var settingsOpen by mutableStateOf(false)
     private var inputFocused = false
+    private var lastSavedText: String? = null
     private val recovery by lazy { DraftRecovery(this, "note") }
     private var recoveryToken: String? = null
     private var untouchedAppend: String? = null
@@ -81,6 +82,13 @@ internal class NoteScreen(
 
     @Composable
     override fun Content(settings: FontSettings) {
+            DisposableEffect(Unit) {
+                val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                    if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) refreshIfClean()
+                }
+                activity.lifecycle.addObserver(observer)
+                onDispose { activity.lifecycle.removeObserver(observer) }
+            }
             val input = remember { FocusRequester() }
             val controls = remember { FocusRequester() }
             val inputMode = LocalInputModeManager.current
@@ -88,17 +96,7 @@ internal class NoteScreen(
             val focus = LocalFocusManager.current
             val view = LocalView.current
             val windowFocused = LocalWindowInfo.current.isWindowFocused
-            val scope = rememberCoroutineScope()
-            val leave = {
-                inputMode.requestInputMode(InputMode.Keyboard)
-                scope.launch {
-                    // Keyboard mode must reach the buttons before they can accept focus.
-                    withFrameNanos { }
-                    controls.requestFocus()
-                    keyboard?.hide()
-                }
-            }
-                Scaffold(modifier = Modifier.onPreviewKeyEvent { handleShortcut(it.nativeKeyEvent) },
+            Scaffold(modifier = Modifier.onPreviewKeyEvent { handleShortcut(it.nativeKeyEvent) },
                     contentWindowInsets = WindowInsets.safeDrawing.union(WindowInsets.ime),
                     ) { padding ->
                         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).testTag("note-content")) {
@@ -117,8 +115,6 @@ internal class NoteScreen(
                             }
                                 Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).testTag("note-actions").padding(horizontal = 16.dp),
                                      verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                                        EditorFontPicker { keyboard?.hide(); settingsOpen = true }
-                                        LeaveInputButton(ready) { leave() }
                                         IconButton(onClick = { draft.editNote { insertNoteCheckbox(it) }; input.requestFocus(); keyboard?.show() },
                                             enabled = ready, modifier = Modifier.size(48.dp).focusRing().testTag("insert-checkbox")) {
                                             Icon(painterResource(R.drawable.ic_check_box), stringResource(R.string.insert_checkbox))
@@ -156,6 +152,7 @@ internal class NoteScreen(
         runCatching { DatabaseHelper(this).use { it.getNoteById(noteId) } }
             .onSuccess {
                 draft.edit { replace(0, length, it?.let { note -> restoredNoteText(note.title, note.content) } ?: "") }
+                lastSavedText = draft.text.toString()
                 draft.undoState.clearHistory(); ready = true; error = null
                 if (applyCapture) applyPendingCapture()
             }
@@ -168,13 +165,23 @@ internal class NoteScreen(
         val (title, body) = splitNote(draft.text.toString())
         return runCatching {
             DatabaseHelper(this).use { helper ->
+                // A clean editor must not overwrite a headless append; deleted rows still get replacement IDs.
+                if (recoveryToken == null && draft.text.isNotBlank() && draft.text.toString() == lastSavedText &&
+                    helper.getNoteById(noteId) != null) return@use
                 if (title.isEmpty() && body.isEmpty()) helper.deleteNotes(listOf(noteId))
                 else if (helper.updateNote(noteId, title, body) == 0) noteId = helper.insertNote(title, body)
             }
-        }.fold(onSuccess = { untouchedAppend = null; recovery.remove(recoveryToken); recoveryToken = null; error = null; true }, onFailure = {
+        }.fold(onSuccess = { lastSavedText = draft.text.toString(); untouchedAppend = null; recovery.remove(recoveryToken); recoveryToken = null; error = null; true }, onFailure = {
             Log.e("NoteScreen", "Save failed; draft retained", it)
             error = getString(R.string.write_failed); false
         })
+    }
+    internal fun refreshIfClean() {
+        if (ready && recoveryToken == null && pendingText == null && draft.text.toString() == lastSavedText) {
+            val selection = draft.selection
+            loadNote()
+            draft.edit { this.selection = TextRange(selection.start.coerceAtMost(length), selection.end.coerceAtMost(length)) }
+        }
     }
     private fun create(action: CreationShortcut) {
         if (!saveNote()) return

@@ -2,7 +2,6 @@ package com.example.notes
 
 import android.os.SystemClock
 import android.view.KeyEvent
-import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.test.core.app.ActivityScenario
@@ -36,22 +35,19 @@ class ShellNavigationTest {
             compose.onNodeWithTag("task-text").assertIsFocused()
             key(KeyEvent.KEYCODE_TAB)
             compose.onNodeWithTag("task-text").assertIsNotFocused()
+            compose.onNodeWithTag("done").assertIsFocused()
             key(KeyEvent.KEYCODE_TAB, KeyEvent.META_SHIFT_ON)
             compose.onNodeWithTag("task-text").assertIsFocused()
-            compose.onNodeWithTag("leave-input").performClick()
-            compose.waitUntil(10000) {
-                !compose.onNodeWithTag("task-text").fetchSemanticsNode().config[SemanticsProperties.Focused]
-            }
+            key(KeyEvent.KEYCODE_TAB)
             compose.onNodeWithTag("task-text").assertIsNotFocused()
             compose.onNodeWithTag("done").assertIsFocused()
-            key(KeyEvent.KEYCODE_DPAD_LEFT)
-            compose.onNodeWithTag("task-menu").assertIsFocused()
-            key(KeyEvent.KEYCODE_DPAD_RIGHT)
-            compose.onNodeWithTag("done").assertIsFocused()
+            compose.onNodeWithTag("items").assertIsDisplayed()
+            compose.onNodeWithTag("section-TASKS").assertIsSelected()
             key(KeyEvent.KEYCODE_SPACE)
+            compose.onNodeWithTag("task-text").assertDoesNotExist()
             instrumentation.waitForIdleSync()
             compose.onNodeWithTag("section-NOTES").performClick()
-            // waitForMonitorWithTimeout removes the monitor after the first match.
+            // A new inline editor has no navigation destination event.
             monitor.reset()
             key(KeyEvent.KEYCODE_T,KeyEvent.META_ALT_ON)
             val next = monitor.await()
@@ -74,11 +70,12 @@ class ShellNavigationTest {
                                 compose.waitUntil(10000) { compose.onAllNodesWithTag("task-text").fetchSemanticsNodes().isNotEmpty() }
                                 compose.onNodeWithTag("task-text").performClick().performTextReplacement("saved-$code-$meta")
                                 compose.waitForIdle()
-                                 compose.onNodeWithTag("leave-input").performClick()
+                                 key(KeyEvent.KEYCODE_TAB)
                                 compose.onNodeWithTag("task-text").assertIsNotFocused()
                                 compose.onNodeWithTag("done").assertIsFocused()
                             }
-                            val target = if (code == KeyEvent.KEYCODE_N) NoteScreen::class.java else TaskScreen::class.java
+                            val taskTarget = code == KeyEvent.KEYCODE_T || (inEditor && meta == KeyEvent.META_ALT_ON)
+                            val target = if (taskTarget) TaskScreen::class.java else NoteScreen::class.java
                             val monitor = navigationMonitor(target.name)
                             key(code, meta)
                             val opened = monitor.await()
@@ -90,6 +87,29 @@ class ShellNavigationTest {
                         }
                     }
             } finally { helper.deleteTask(id) }
+        }
+    }
+
+    @Test fun altNUsesSelectedSectionAndAltTStillCreatesInlineTask() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            compose.onNodeWithTag("section-NOTES").performClick()
+            key(KeyEvent.KEYCODE_N, KeyEvent.META_ALT_ON)
+            compose.waitUntil(10000) { compose.onAllNodesWithTag("note-text").fetchSemanticsNodes().isNotEmpty() }
+            scenario.onActivity { assertEquals("note/{id}", it.navController.currentDestination?.route) }
+            key(KeyEvent.KEYCODE_ESCAPE)
+            compose.onNodeWithTag("section-TASKS").performClick()
+            for (code in listOf(KeyEvent.KEYCODE_N, KeyEvent.KEYCODE_T)) {
+                key(code, KeyEvent.META_ALT_ON)
+                compose.onNodeWithTag("task-text").assertIsDisplayed().assertIsFocused()
+                scenario.onActivity { assertEquals("list", it.navController.currentDestination?.route) }
+                key(KeyEvent.KEYCODE_ESCAPE)
+                compose.onNodeWithTag("task-text").assertDoesNotExist()
+                compose.onNodeWithTag("section-TASKS").assertIsSelected()
+            }
+            key(KeyEvent.KEYCODE_N, KeyEvent.META_SHIFT_ON)
+            compose.waitUntil(10000) { compose.onAllNodesWithTag("note-text").fetchSemanticsNodes().isNotEmpty() }
+            scenario.onActivity { assertEquals("note/{id}", it.navController.currentDestination?.route) }
+            key(KeyEvent.KEYCODE_ESCAPE)
         }
     }
 
@@ -106,7 +126,7 @@ class ShellNavigationTest {
                 compose.onNodeWithTag("create").performClick()
                 val editor = monitor.await()
                 assertNotNull(editor)
-                compose.onNodeWithTag("font-picker").performClick()
+                compose.onNodeWithTag("settings").performClick()
                 compose.onNodeWithTag("font-JETBRAINS_MONO_SEMIBOLD").assertIsSelected()
                 compose.onNodeWithTag("font-SYSTEM_DEFAULT").performClick()
                 compose.onNode(hasText("Done") and hasAnyAncestor(isDialog())).performClick()

@@ -192,7 +192,11 @@ class QuickCaptureTest {
             ready("note-text"); compose.onNodeWithTag("note-text").performTextReplacement("Saved before capture")
             context.startActivity(intent(QuickCapture.NEW_TODO, "Warm task")); ready("task-text")
             assertEquals(1, helper.getNotePreviews().count { it.title == "Saved before capture" })
-            scenario.onActivity { assertEquals("list", it.navController.previousBackStackEntry?.destination?.route) }
+            scenario.onActivity {
+                assertEquals("list", it.navController.currentDestination?.route)
+                assertNull(it.navController.previousBackStackEntry)
+                assertTrue(it.currentEditor is TaskScreen)
+            }
             context.startActivity(intent(QuickCapture.NEW_NOTE)); ready("note-text")
             blank("note-text")
             assertEquals(1, helper.getTaskSummaries().count { it.task.text == "Warm task" })

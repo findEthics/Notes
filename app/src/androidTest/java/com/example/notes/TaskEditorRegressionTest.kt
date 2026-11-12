@@ -1,6 +1,5 @@
 package com.example.notes
 
-import android.content.Intent
 import android.view.KeyEvent
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
@@ -60,11 +59,15 @@ class TaskEditorRegressionTest {
             assertTrue(saved.completed)
             scenario.moveToState(Lifecycle.State.RESUMED)
             scenario.recreate(); loaded()
+            scenario.onActivity {
+                assertEquals("list", it.navController.currentDestination?.route)
+                assertEquals(saved.id, (it.currentEditor as TaskScreen).editingTaskId)
+            }
             compose.onNodeWithTag("task-text").assertTextContains(text).performTextReplacement("task edited")
             // Semantics replacement must reach the field's IME buffer before native Back.
             compose.waitForIdle()
             scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
-            compose.waitUntil(5000) { compose.onAllNodesWithTag("items").fetchSemanticsNodes().isNotEmpty() }
+            compose.waitUntil(5000) { compose.onAllNodesWithTag("task-text").fetchSemanticsNodes().isEmpty() }
             instrumentation.waitForIdleSync()
             assertEquals("task edited", helper.getTaskById(saved.id)!!.text)
             assertTrue(helper.getTaskById(saved.id)!!.completed)
@@ -87,7 +90,7 @@ class TaskEditorRegressionTest {
             assertEquals(1, helper.getTaskSummaries().count { it.task.id == id })
         }
         fun nativeReplace(tag: String, value: String) {
-            compose.onNodeWithTag("task-fields").performScrollToNode(hasTestTag(tag))
+            compose.onNodeWithTag("items").performScrollToNode(hasTestTag(tag))
             // Acquire focus explicitly, then synchronize Android and Compose input queues.
             compose.onNodeWithTag(tag).performSemanticsAction(
                 androidx.compose.ui.semantics.SemanticsActions.RequestFocus) { assertTrue(it()) }
@@ -154,7 +157,7 @@ class TaskEditorRegressionTest {
                     "recreation" -> repeat(3) { scenario.recreate(); loaded(); stored(parent) }
                 }
                 if (boundary == "Done" || boundary == "Back") {
-                    compose.waitUntil(5000) { compose.onAllNodesWithTag("items").fetchSemanticsNodes().isNotEmpty() }
+                    compose.waitUntil(5000) { compose.onAllNodesWithTag("task-text").fetchSemanticsNodes().isEmpty() }
                 }
             }
             stored(parent)
@@ -177,7 +180,8 @@ class TaskEditorRegressionTest {
             key(KeyEvent.KEYCODE_S, KeyEvent.META_CTRL_ON)
             assertNull(helper.getTaskById(id))
             scenario.recreate(); loaded()
-            compose.onNodeWithTag("task-text").assertTextContains("   ")
+            compose.onNodeWithTag("task-text").assert(SemanticsMatcher.expectValue(
+                SemanticsProperties.EditableText, AnnotatedString("")))
             compose.onNodeWithTag("task-text").performTextReplacement("recovered")
             compose.onNodeWithTag("done").performClick()
         }
@@ -186,13 +190,42 @@ class TaskEditorRegressionTest {
         assertNotEquals(id, replacement.id)
     }
 
-    @Test fun taskDeletionIsReachable() {
+    @Test fun taskDeletionIsReachableFromListAfterClosingInlineEditor() {
         val id = helper.insertTask("delete fixture")!!; ids.add(id)
         launchTask(id).use {
-            loaded(); compose.onNodeWithTag("task-menu").performClick()
-            compose.onNodeWithTag("delete-task").performClick()
+            loaded(); key(KeyEvent.KEYCODE_ESCAPE)
+            compose.onNodeWithTag("task-text").assertDoesNotExist()
+            compose.onNodeWithTag("task-$id").performSemanticsAction(
+                androidx.compose.ui.semantics.SemanticsActions.RequestFocus) { assertTrue(it()) }
+            key(KeyEvent.KEYCODE_FORWARD_DEL)
+            compose.onNodeWithTag("task-$id").assertDoesNotExist()
+            // Undo defers the actual write until dismissal or stop.
+            compose.onNodeWithContentDescription("Dismiss").performClick()
+            compose.waitUntil(5000) { helper.getTaskById(id) == null }
         }
         assertNull(helper.getTaskById(id))
+    }
+
+    @Test fun longPressSavesAndClosesInlineEditorBeforeStagingDelete() {
+        val editing = helper.insertTask("editing")!!; ids.add(editing)
+        val target = helper.insertTask("long press target")!!; ids.add(target)
+        launchTask(editing).use { scenario ->
+            loaded()
+            compose.onNodeWithTag("task-text").performTextReplacement("saved before delete")
+            compose.onNodeWithTag("items").performScrollToNode(hasTestTag("task-$target"))
+            compose.onNodeWithTag("task-$target").performTouchInput { longClick() }
+            compose.onNodeWithTag("task-text").assertDoesNotExist()
+            scenario.onActivity { assertNull(it.currentEditor) }
+            assertEquals("saved before delete", helper.getTaskById(editing)!!.text)
+            compose.onNodeWithText("Deleted 1").assertIsDisplayed()
+            compose.onNodeWithTag("task-$target").assertDoesNotExist()
+            assertNotNull(helper.getTaskById(target))
+            compose.onNodeWithContentDescription("Dismiss").performClick()
+            compose.waitUntil(10000) { helper.getTaskById(target) == null }
+            scenario.recreate()
+            compose.onNodeWithTag("task-text").assertDoesNotExist()
+            assertNull(helper.getTaskById(target))
+        }
     }
 
     @Test fun realKeyEventsGateInputFocusAndReplaceEditorAfterSaving() {
@@ -216,7 +249,7 @@ class TaskEditorRegressionTest {
                 .performTextReplacement("key edited")
             instrumentation.waitForIdleSync()
             assertEquals(0, monitor.hits)
-            compose.onNodeWithTag("leave-input").performClick()
+            key(KeyEvent.KEYCODE_TAB)
             compose.onNodeWithTag("task-text").assertIsNotFocused()
             compose.onNodeWithTag("done").assertIsFocused()
             send(KeyEvent.KEYCODE_T, KeyEvent.META_ALT_ON, 1)
@@ -234,16 +267,62 @@ class TaskEditorRegressionTest {
 
     @Test fun enterSavesThenShowsBlankInSameActivityAndBlankEnterCloses() {
         val id = helper.insertTask("first")!!; ids.add(id)
+        val surrounding = helper.insertTask("surrounding row")!!; ids.add(surrounding)
         launchTask(id).use { scenario ->
             loaded(); compose.onNodeWithTag("task-text").performTextReplacement("first edited")
+            compose.onNodeWithTag("task-$surrounding").assertIsDisplayed()
+            scenario.onActivity { assertEquals("list", it.navController.currentDestination?.route) }
             key(KeyEvent.KEYCODE_ENTER)
             assertEquals(Lifecycle.State.RESUMED, scenario.state)
             assertEquals("first edited", helper.getTaskById(id)!!.text)
             compose.onNodeWithTag("task-text").assert(SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString(""))).assertIsFocused()
+            compose.onNodeWithTag("task-$id").assertIsDisplayed()
+            compose.onNodeWithTag("task-$surrounding").assertIsDisplayed()
+            scenario.onActivity { assertEquals(-1L, (it.currentEditor as TaskScreen).editingTaskId) }
             scenario.recreate(); loaded()
             compose.onNodeWithTag("task-text").assert(SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString("")))
+            compose.onNodeWithTag("task-text").performTextReplacement("next inline task")
             key(KeyEvent.KEYCODE_ENTER)
-            compose.waitUntil(5000) { compose.onAllNodesWithTag("items").fetchSemanticsNodes().isNotEmpty() }
+            val next = helper.getTaskSummaries().single { it.task.text == "next inline task" }.task
+            ids.add(next.id)
+            assertNotEquals(id, next.id)
+            compose.onNodeWithTag("task-${next.id}").assertIsDisplayed()
+            compose.onNodeWithTag("task-text").assert(SemanticsMatcher.expectValue(
+                SemanticsProperties.EditableText, AnnotatedString(""))).assertIsFocused()
+            key(KeyEvent.KEYCODE_ENTER)
+            compose.waitUntil(5000) { compose.onAllNodesWithTag("task-text").fetchSemanticsNodes().isEmpty() }
+            compose.onNodeWithTag("items").assertIsDisplayed()
+        }
+    }
+
+    @Test fun newInlineEnterAndControlSShowSavedRowsBeforeComposerCloses() {
+        launchTask().use { scenario ->
+            loaded()
+            compose.onNodeWithTag("task-text").performClick().assertIsFocused()
+            scenario.onActivity { it.window.insetsController?.show(android.view.WindowInsets.Type.ime()) }
+            compose.waitUntil(5000) {
+                var visible = false
+                scenario.onActivity {
+                    visible = it.window.decorView.rootWindowInsets?.isVisible(android.view.WindowInsets.Type.ime()) == true
+                }
+                visible
+            }
+            for ((code, meta) in listOf(KeyEvent.KEYCODE_ENTER to 0, KeyEvent.KEYCODE_S to KeyEvent.META_CTRL_ON)) {
+                val text = "inline-visible-${UUID.randomUUID()}"
+                compose.onNodeWithTag("task-text").performTextReplacement(text)
+                key(code, meta)
+                val saved = helper.getTaskSummaries().single { it.task.text == text }.task
+                ids.add(saved.id)
+                compose.waitUntil(5000) {
+                    compose.onAllNodesWithTag("task-${saved.id}").fetchSemanticsNodes().isNotEmpty()
+                }
+                // Do not scroll or close the composer: the saved row must already be in its viewport.
+                compose.onNodeWithTag("task-${saved.id}").assertIsDisplayed()
+                compose.onNodeWithTag("task-label-${saved.id}", useUnmergedTree = true).assertIsDisplayed()
+                compose.onNodeWithTag("task-text").assertIsDisplayed().assertIsFocused().assert(
+                    SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString("")))
+                scenario.onActivity { assertEquals(-1L, (it.currentEditor as TaskScreen).editingTaskId) }
+            }
         }
     }
 
@@ -252,7 +331,7 @@ class TaskEditorRegressionTest {
         launchTask(id).use { scenario ->
             loaded(); compose.onNodeWithTag("task-text").performTextReplacement(" \n ")
             key(KeyEvent.KEYCODE_ENTER)
-            compose.waitUntil(5000) { compose.onAllNodesWithTag("items").fetchSemanticsNodes().isNotEmpty() }
+            compose.waitUntil(5000) { compose.onAllNodesWithTag("task-text").fetchSemanticsNodes().isEmpty() }
             assertNull(helper.getTaskById(id))
         }
     }
@@ -294,7 +373,7 @@ class TaskEditorRegressionTest {
             launchTask(id).use { scenario ->
                 loaded(); compose.onNodeWithTag("task-text").performTextReplacement("saved close")
                 key(code, meta)
-                compose.waitUntil(5000) { compose.onAllNodesWithTag("items").fetchSemanticsNodes().isNotEmpty() }
+                compose.waitUntil(5000) { compose.onAllNodesWithTag("task-text").fetchSemanticsNodes().isEmpty() }
                 assertEquals("saved close", helper.getTaskById(id)!!.text)
             }
         }
@@ -305,12 +384,12 @@ class TaskEditorRegressionTest {
         try {
             launchTask().use { scenario ->
                 loaded()
-                compose.onNodeWithTag("font-picker").performClick()
+                compose.onNodeWithTag("settings").performClick()
                 compose.onNodeWithTag("font-MONOSPACE").performClick().assertIsSelected()
                 assertEquals(FontChoice.MONOSPACE, FontSettings(context).use { it.choice })
                 compose.onNode(hasText("Done") and hasAnyAncestor(isDialog())).performClick()
                 scenario.recreate(); loaded()
-                compose.onNodeWithTag("font-picker").performClick()
+                compose.onNodeWithTag("settings").performClick()
                 compose.onNodeWithTag("font-MONOSPACE").assertIsSelected()
                 compose.onNodeWithTag("font-JETBRAINS_MONO_BOLD").performClick().assertIsSelected()
                 compose.onNode(hasText("Done") and hasAnyAncestor(isDialog())).performClick()

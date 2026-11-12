@@ -1,6 +1,5 @@
 package com.example.notes
 
-import android.content.Intent
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
@@ -54,21 +53,13 @@ class TaskPolishTest {
         compose.onNode(hasTestTag("settings") and hasAnyAncestor(hasTestTag(panel))).assertDoesNotExist()
     }
     private fun editorActions() {
-        compose.onNodeWithTag("settings").assertDoesNotExist()
-        compose.onNodeWithTag("section-panel").assertDoesNotExist()
-        compose.onNodeWithTag("create").assertDoesNotExist()
-        for (tag in listOf("font-picker", "leave-input", "task-menu", "done")) {
-            // Compare one settled IME frame, not a footer snapshot from before its animation.
-            compose.waitUntil(10000) {
-                val footer = compose.onNodeWithTag("task-actions").fetchSemanticsNode().boundsInRoot
-                val control = compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
-                control.top >= footer.top && control.bottom <= footer.bottom
-            }
-            val control = compose.onNodeWithTag(tag).assertIsDisplayed().assertHeightIsAtLeast(48.dp)
-                .assertWidthIsAtLeast(48.dp).fetchSemanticsNode().boundsInRoot
-            val footer = compose.onNodeWithTag("task-actions").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
-            assertTrue("$tag belongs to footer", control.top >= footer.top && control.bottom <= footer.bottom)
-        }
+        compose.onNodeWithTag("settings").assertIsDisplayed()
+        for (tag in listOf("font-picker", "leave-input", "task-menu", "task-actions"))
+            compose.onNodeWithTag(tag).assertDoesNotExist()
+        val done = compose.onNodeWithTag("done").assertIsDisplayed().assertHeightIsAtLeast(48.dp)
+            .assertWidthIsAtLeast(48.dp).fetchSemanticsNode().boundsInRoot
+        val row = compose.onNodeWithTag("task-fields").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        assertTrue("Done belongs to inline row", done.top >= row.top && done.bottom <= row.bottom)
     }
 
     @Test fun shellSettingsAndFabStaySeparateOnBothSections() {
@@ -92,6 +83,7 @@ class TaskPolishTest {
     }
 
     @Test fun editorSettingsAndActionsStayClearOfIme() {
+        ids.add(helper.insertTask("checked behind IME", true)!!)
         launchTask().use { scenario ->
             loaded("task-text")
             compose.onNodeWithTag("task-text").performClick()
@@ -101,10 +93,40 @@ class TaskPolishTest {
                 ime > 0
             }
             editorActions()
+            compose.onNodeWithTag("section-panel").assertDoesNotExist()
+            compose.onNodeWithTag("create").assertDoesNotExist()
+            compose.onNodeWithTag("delete-checked").assertDoesNotExist()
             val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
             val done = compose.onNodeWithTag("done").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
             assertTrue("Done is above IME", done.bottom <= root.bottom - ime + 1)
             screenshot("polish-editor-ime.png")
+            compose.onNodeWithTag("done").performClick()
+            compose.onNodeWithTag("section-TASKS").assertIsSelected()
+            compose.onNodeWithTag("create").assertIsDisplayed()
+            compose.onNodeWithTag("delete-checked").assertIsDisplayed()
+        }
+    }
+
+    @Test fun deleteCheckedFabIsAboveCreateAndOnlyVisibleForCompletedTasksInTodos() {
+        val id = helper.insertTask("FAB visibility")!!; ids.add(id)
+        ActivityScenario.launch(MainActivity::class.java).use {
+            compose.onNodeWithTag("delete-checked").assertDoesNotExist()
+            compose.onNodeWithTag("section-TASKS").performClick()
+            loaded("task-$id")
+            compose.onNodeWithTag("delete-checked").assertDoesNotExist()
+            compose.onNodeWithTag("task-completed-$id").performClick()
+            loaded("delete-checked")
+            val sweep = compose.onNodeWithTag("delete-checked").assertIsDisplayed()
+                .assertContentDescriptionEquals("Delete all checked").assertHasClickAction()
+                .assertHeightIsAtLeast(48.dp).assertWidthIsAtLeast(48.dp).fetchSemanticsNode().boundsInRoot
+            val create = compose.onNodeWithTag("create").fetchSemanticsNode().boundsInRoot
+            assertTrue("Delete checked belongs above +", sweep.bottom <= create.top)
+            compose.onNodeWithTag("section-NOTES").performClick()
+            compose.onNodeWithTag("delete-checked").assertDoesNotExist()
+            compose.onNodeWithTag("section-TASKS").performClick()
+            loaded("delete-checked")
+            compose.onNodeWithTag("task-completed-$id").performClick()
+            compose.waitUntil(10000) { compose.onAllNodesWithTag("delete-checked").fetchSemanticsNodes().isEmpty() }
         }
     }
 
@@ -138,13 +160,13 @@ class TaskPolishTest {
         }
     }
 
-    @Test fun editorStrikeUnstrikeFontAndFooterPersist() {
+    @Test fun editorStrikeUnstrikeFontAndInlineActionsPersist() {
         val a = helper.insertTask("parent\nsecond")!!; ids.add(a)
         val old = FontSettings(context).use { it.choice }
         try {
             launchTask(a).use { scenario ->
                 loaded("task-text"); editorActions()
-                compose.onNodeWithTag("font-picker").performClick()
+                compose.onNodeWithTag("settings").performClick()
                 compose.onNodeWithTag("font-MONOSPACE").performClick()
                 compose.onNode(hasText("Done") and hasAnyAncestor(isDialog())).performClick()
                 assertEquals(androidx.compose.ui.text.font.FontFamily.Monospace, layout("task-text").layoutInput.style.fontFamily)

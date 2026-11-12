@@ -6,6 +6,7 @@ import android.view.KeyEvent
 import android.view.KeyboardShortcutGroup
 import android.view.KeyboardShortcutInfo
 import android.view.Menu
+import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -32,10 +33,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.unit.dp
 import com.example.notes.ui.*
@@ -79,6 +82,10 @@ class MainActivity : ComponentActivity() {
         private set
     internal var currentEditor: EditorSession? = null
         private set
+    private var inlineTask by mutableStateOf<TaskScreen?>(null)
+    private val dataChanged: () -> Unit = {
+        if (!isDestroyed && !isFinishing) { load(); (currentEditor as? NoteScreen)?.refreshIfClean() }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -97,6 +104,12 @@ class MainActivity : ComponentActivity() {
             else runCatching { intent.getIntExtra(EXTRA_SECTION, 0) }.getOrDefault(0)) { Section.NOTES }
         selectionMode = savedInstanceState?.getBoolean("selection_mode") ?: false
         selectedIds = savedInstanceState?.getLongArray("selected_ids")?.toSet() ?: emptySet()
+        savedInstanceState?.getBundle("inline_task")?.let { state ->
+            inlineTask = TaskScreen(this, state, null, ::closeInlineTask, ::load)
+            currentEditor = inlineTask
+            section = Section.TASKS
+        }
+        NotesDataEvents.listeners.add(dataChanged)
         savedInstanceState?.getLongArray("pending_delete_ids")?.let { ids ->
             pendingDelete = PendingDelete(Section.entries[savedInstanceState.getInt("pending_delete_section")], ids.toList())
         }
@@ -144,14 +157,6 @@ class MainActivity : ComponentActivity() {
                                 entry.savedStateHandle.remove<Boolean>("capture_append") == true) }
                             EditorContent(entry, screen, settings)
                         }
-                        composable("task?id={id}", arguments = listOf(navArgument("id") {
-                            type = NavType.LongType; defaultValue = -1L
-                        })) { entry ->
-                            val screen = remember(entry) { TaskScreen(this@MainActivity,
-                                entry.savedStateHandle.get<Bundle>("editor"), entry.arguments!!.getLong("id").takeIf { it > 0 },
-                                ::closeEditor, ::replaceEditor, entry.savedStateHandle.remove<String>("capture_text")) }
-                            EditorContent(entry, screen, settings)
-                        }
                         composable("note-picker") { entry ->
                             LaunchedEffect(entry) { load() }
                             NotePicker(notes, loading, error, ::load, { id ->
@@ -196,9 +201,14 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun ListContent(settings: FontSettings, preview: Boolean = false) {
         val keyboard = LocalInputModeManager.current.inputMode == InputMode.Keyboard
+        val composingWithIme = inlineTask != null &&
+            WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current) > 0
         val listFocus = remember { FocusRequester() }
         val accessibility = LocalAccessibilityManager.current
         val pending = pendingDelete
+        val pendingIds = pending?.takeIf { it.section == Section.TASKS }?.ids.orEmpty()
+        val checkedTaskIds = tasks.asSequence().filter { it.task.completed && it.task.id !in pendingIds }
+            .map { it.task.id }.toList()
         LaunchedEffect(pending, preview) {
             if (pending != null && !preview) {
                 val timeout = accessibility?.calculateRecommendedTimeoutMillis(5000, true, true, true) ?: 5000L
@@ -212,7 +222,9 @@ class MainActivity : ComponentActivity() {
             }
         }
         if (!preview) {
-                BackHandler(selectionMode) { cancelSelection() }
+                BackHandler(selectionMode || inlineTask != null) {
+                    if (inlineTask != null) closeInlineTask() else cancelSelection()
+                }
         }
                 Box(Modifier.fillMaxSize()) {
                  Scaffold(modifier = Modifier.onPreviewKeyEvent { handleShortcut(it.nativeKeyEvent) }
@@ -231,17 +243,34 @@ class MainActivity : ComponentActivity() {
                                     modifier = Modifier.focusRing().testTag("delete-selected")) { Text(stringResource(R.string.delete_note)) }
                                 TextButton(onClick = ::cancelSelection, modifier = Modifier.focusRing()) { Text(stringResource(R.string.cancel)) }
                             }
-                            BottomSectionPanel(section, {
+                            if (!composingWithIme) BottomSectionPanel(section, {
                                 switchSection(it)
                             })
                         }
                     }, floatingActionButton = {
-                        FloatingActionButton(onClick = { create(if (section == Section.NOTES)
-                            CreationShortcut.NOTE else CreationShortcut.TASK) },
-                            modifier = Modifier.focusRing().testTag("create"),
-                            containerColor = MaterialTheme.colorScheme.primaryContainer) {
-                            Icon(Icons.Default.Add, contentDescription = getString(
-                                if (section == Section.NOTES) R.string.add_note else R.string.add_task))
+                        if (!composingWithIme) Column(horizontalAlignment = Alignment.End,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            if (section == Section.TASKS && checkedTaskIds.isNotEmpty()) {
+                                FloatingActionButton(onClick = {
+                                    if (inlineTask != null && !closeInlineTask()) return@FloatingActionButton
+                                    val hiddenIds = pendingDelete?.takeIf { it.section == Section.TASKS }?.ids.orEmpty()
+                                    val ids = tasks.asSequence().filter { it.task.completed && it.task.id !in hiddenIds }
+                                        .map { it.task.id }.toList()
+                                    if (ids.isNotEmpty()) stageDelete(ids)
+                                }, modifier = Modifier.focusRing().testTag("delete-checked"),
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    contentColor = contentColorFor(MaterialTheme.colorScheme.secondaryContainer)) {
+                                    Icon(painterResource(R.drawable.ic_delete_sweep),
+                                        contentDescription = stringResource(R.string.delete_checked))
+                                }
+                            }
+                            FloatingActionButton(onClick = { create(if (section == Section.NOTES)
+                                CreationShortcut.NOTE else CreationShortcut.TASK) },
+                                modifier = Modifier.focusRing().testTag("create"),
+                                containerColor = MaterialTheme.colorScheme.primaryContainer) {
+                                Icon(Icons.Default.Add, contentDescription = getString(
+                                    if (section == Section.NOTES) R.string.add_note else R.string.add_task))
+                            }
                         }
                     }) { padding ->
                     Crossfade(section, animationSpec = tween(140), label = "list-section") { displayedSection ->
@@ -250,16 +279,25 @@ class MainActivity : ComponentActivity() {
                     val visibleTasks = tasks.filterNot { pending?.section == Section.TASKS && it.task.id in pending.ids }
                     val keys = if (displayedSection == Section.NOTES) visibleNotes.map { "note-${it.id}" }
                         else visibleTasks.map { "task-${it.task.id}" }
-                    val scroll = if (displayedSection == Section.NOTES) noteScroll else taskScroll
+                     val scroll = if (displayedSection == Section.NOTES) noteScroll else taskScroll
+                      val editingId = inlineTask?.editingTaskId
+                      LaunchedEffect(active, editingId, loading) {
+                          // Scaffold subcomposition can still be measuring when this effect starts.
+                          withFrameNanos { }
+                          if (active && displayedSection == Section.TASKS && editingId != null && !loading) {
+                             val index = visibleTasks.indexOfFirst { it.task.id == editingId }.coerceAtLeast(0)
+                             scroll.scrollToItem(index + if (error != null) 1 else 0)
+                         }
+                     }
                      val requesters = remember { mutableMapOf<String, FocusRequester>() }
                       LaunchedEffect(active, keyboard, loading, focusRevision) {
                           // Scaffold may start this effect during subcomposition; wait before forcing layout.
                           withFrameNanos { }
-                          if (active && !loading) {
+                           if (active && !loading && inlineTask == null) {
                              // Keep a key target even when the outgoing row disappears or this section is empty.
                              listFocus.requestFocus()
                          }
-                         if (active && keyboard && !loading && keys.isNotEmpty()) {
+                          if (active && keyboard && !loading && keys.isNotEmpty() && inlineTask == null) {
                             val target = restoreRow?.takeIf { it in keys } ?: keys.getOrNull(scroll.firstVisibleItemIndex) ?: keys.first()
                             val headerCount = (if (error != null) 1 else 0)
                             if (scroll.layoutInfo.visibleItemsInfo.none { it.key == target })
@@ -272,7 +310,9 @@ class MainActivity : ComponentActivity() {
                         state = scroll,
                         contentPadding = PaddingValues(start = padding.calculateLeftPadding(androidx.compose.ui.unit.LayoutDirection.Ltr) + 16.dp,
                             end = padding.calculateRightPadding(androidx.compose.ui.unit.LayoutDirection.Ltr) + 64.dp,
-                            top = padding.calculateTopPadding() + 8.dp, bottom = padding.calculateBottomPadding() + 88.dp)) {
+                            top = padding.calculateTopPadding() + 8.dp,
+                            // The IME already reduces the viewport; don't reserve FAB space below the composer too.
+                            bottom = padding.calculateBottomPadding() + if (inlineTask != null) 8.dp else 88.dp)) {
                         error?.let { message -> item { ErrorNotice(message) { load() } } }
                         if (loading) item { LinearProgressIndicator(Modifier.fillMaxWidth().testTag("loading")) }
                         if (displayedSection == Section.NOTES) {
@@ -298,24 +338,31 @@ class MainActivity : ComponentActivity() {
                                     Column(Modifier.weight(1f)) {
                                         NotePreview(note)
                                      }
-                                    if (!selectionMode && note.id == notes.firstOrNull()?.id) IconButton(
-                                        onClick = { selectionMode = true }, enabled = active, modifier = Modifier.size(48.dp).focusRing().testTag("select-notes")) {
-                                        Icon(androidx.compose.ui.res.painterResource(R.drawable.ic_select_notes), stringResource(R.string.select_notes))
-                                    }
                                 }
                                   HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                                 }
                             }
                         } else {
-                            if (!loading && visibleTasks.isEmpty()) item { Text("No to-dos yet · Alt+T or + to create", Modifier.padding(vertical = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                             val editor = inlineTask.takeIf { active }
+                             if (editor != null && visibleTasks.none { it.task.id == editor.editingTaskId })
+                                 item(key = "task-composer") { editor.Content(settings) }
+                             if (!loading && visibleTasks.isEmpty() && editor == null) item { Text("No to-dos yet · Alt+T or + to create", Modifier.padding(vertical = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
                             items(visibleTasks, key = { "task-${it.task.id}" }) { summary ->
                                 val key = "task-${summary.task.id}"
                                 val requester = remember(key) { FocusRequester() }
                                 DisposableEffect(key) { requesters[key] = requester; onDispose { requesters.remove(key) } }
-                                Column(Modifier.animateItem()) {
-                                TaskCheckRow(Modifier.fillMaxWidth().heightIn(min = 64.dp).focusRequester(requester)
+                                 Column(Modifier.animateItem()) {
+                                 if (editor?.editingTaskId == summary.task.id) {
+                                     editor.Content(settings)
+                                 } else {
+                                 TaskCheckRow(Modifier.fillMaxWidth().heightIn(min = 64.dp).focusRequester(requester)
                                     .onFocusChanged { if (it.hasFocus && active) focusedRow = key else if (focusedRow == key) focusedRow = null }.focusRing().testTag(key)
-                                    .combinedClickable(enabled = active, onClick = { openTask(summary.task.id) })
+                                    .combinedClickable(enabled = active, onClick = { openTask(summary.task.id) },
+                                        onLongClick = {
+                                            if (inlineTask != null && !closeInlineTask()) return@combinedClickable
+                                            window.decorView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                                            stageDelete(listOf(summary.task.id))
+                                        })
                                     .padding(vertical = 12.dp), checkbox = { alignment ->
                                     Checkbox(summary.task.completed, { completed -> mutate({ helper ->
                                         check(helper.setTaskCompleted(summary.task.id, completed) == 1)
@@ -328,8 +375,9 @@ class MainActivity : ComponentActivity() {
                                             style = taskLabelStyle(summary.task.completed), maxLines = 3, overflow = TextOverflow.Ellipsis)
                                     }
                                 }
-                                  HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                                }
+                                   HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                                 }
+                                 }
                      }
                     }
                         }
@@ -350,7 +398,7 @@ class MainActivity : ComponentActivity() {
         }
         setIntent(intent)
         if (intent.hasExtra(EXTRA_SECTION)) {
-            section = Section.entries.getOrElse(runCatching { intent.getIntExtra(EXTRA_SECTION, 0) }.getOrDefault(0)) { Section.NOTES }
+            switchSection(Section.entries.getOrElse(runCatching { intent.getIntExtra(EXTRA_SECTION, 0) }.getOrDefault(0)) { Section.NOTES })
             cancelSelection()
         }
     }
@@ -361,9 +409,10 @@ class MainActivity : ComponentActivity() {
     }
     override fun onPause() { currentEditor?.saveForLeave(); resumed = false; creation.abandon(); generation++; super.onPause() }
     override fun onStop() { if (!isChangingConfigurations) commitPendingDelete(); super.onStop() }
-    override fun onDestroy() { executor.shutdown(); super.onDestroy() }
+    override fun onDestroy() { NotesDataEvents.listeners.remove(dataChanged); inlineTask?.dispose(); executor.shutdown(); super.onDestroy() }
     override fun onSaveInstanceState(outState: Bundle) {
-        currentEditor?.captureState()?.let { state -> navController.currentBackStackEntry?.savedStateHandle?.set("editor", state) }
+        if (inlineTask != null) outState.putBundle("inline_task", inlineTask!!.captureState())
+        else currentEditor?.captureState()?.let { state -> navController.currentBackStackEntry?.savedStateHandle?.set("editor", state) }
         outState.putInt("section", section.ordinal)
         outState.putBoolean("selection_mode", selectionMode)
         outState.putLongArray("selected_ids", selectedIds.toLongArray())
@@ -386,9 +435,14 @@ class MainActivity : ComponentActivity() {
         if (::navController.isInitialized && navController.currentDestination?.route != "list")
             return currentEditor?.handleShortcut(event) ?: false
         if (settingsOpen) return false
-        val textFocused = currentFocus?.onCheckIsTextEditor() == true
+        if (inlineTask?.handleShortcut(event) == true) { shortcutKeyUps.add(event.keyCode); return true }
+        val textFocused = inlineTask?.textFocused == true || currentFocus?.onCheckIsTextEditor() == true
         val action = event.creationShortcut(textFocused)
-        if (action != null) { create(action); shortcutKeyUps.add(event.keyCode); return true }
+        if (action != null) {
+            create(if (action == CreationShortcut.NOTE && event.isAltPressed && section == Section.TASKS)
+                CreationShortcut.TASK else action)
+            shortcutKeyUps.add(event.keyCode); return true
+        }
         when (event.listAction(textFocused)) {
             ListAction.SwitchSection -> switchSection(if (section == Section.NOTES) Section.TASKS else Section.NOTES)
             ListAction.Delete -> {
@@ -412,7 +466,10 @@ class MainActivity : ComponentActivity() {
         shortcutKeyUps.add(event.keyCode)
         return true
     }
-    private fun switchSection(next: Section) { section = next; focusedRow = null; restoreRow = null; focusRevision++; cancelSelection() }
+    private fun switchSection(next: Section) {
+        if (inlineTask != null && !closeInlineTask()) return
+        section = next; focusedRow = null; restoreRow = null; focusRevision++; cancelSelection()
+    }
     private fun toggle(id: Long) { selectedIds = if (id in selectedIds) selectedIds - id else selectedIds + id }
     private fun cancelSelection() { selectionMode = false; selectedIds = emptySet() }
     private fun load() {
@@ -478,7 +535,7 @@ class MainActivity : ComponentActivity() {
         val result = runCatching { executor.submit<Unit> {
             DatabaseHelper(applicationContext).use { helper ->
                 if (pending.section == Section.NOTES) check(helper.deleteNotes(pending.ids) == pending.ids.size)
-                else pending.ids.forEach { check(helper.deleteTask(it) == 1) }
+                else check(helper.deleteTasks(pending.ids) == pending.ids.size)
             }
         }.get() }
         result.onSuccess {
@@ -492,6 +549,7 @@ class MainActivity : ComponentActivity() {
     }
     private fun create(action: CreationShortcut) {
         if (busy || creation.pending) return
+        if (inlineTask != null && !closeInlineTask()) return
         if (!commitPendingDelete()) return
         section = if (action == CreationShortcut.NOTE) Section.NOTES else Section.TASKS
         cancelSelection()
@@ -505,12 +563,18 @@ class MainActivity : ComponentActivity() {
             return
         }
         if (!commitPendingDelete()) return
+        if (inlineTask != null && !closeInlineTask()) return
         // A pending list insertion owns its row until abandoned; do not open it over a capture.
         creation.abandon()
+        if (capture.action == QuickCapture.NEW_TODO) {
+            pendingCapture = null; settingsOpen = false
+            navController.popBackStack("list", false)
+            openTask(null, capture.text)
+            return
+        }
         runCatching {
             when (capture.action) {
                 QuickCapture.NEW_NOTE -> DatabaseHelper(this).use { "note/${it.insertNote("", "")}" }
-                QuickCapture.NEW_TODO -> "task?id=-1"
                 else -> "note-picker"
             }
         }.onSuccess { route ->
@@ -523,19 +587,32 @@ class MainActivity : ComponentActivity() {
     }
     private fun openNote(id: Long) {
         if (!resumed || creation.pending) return
+        if (inlineTask != null && !closeInlineTask()) return
         if (!commitPendingDelete()) return
         restoreRow = "note-$id"
         navController.navigate("note/$id")
     }
-    private fun openTask(id: Long?) {
+    internal fun openTask(id: Long?, text: String? = null) {
         if (!resumed || creation.pending) return
         if (!commitPendingDelete()) return
+        if (inlineTask != null && !closeInlineTask()) return
+        section = Section.TASKS; cancelSelection()
         restoreRow = id?.let { "task-$it" }
-        navController.navigate("task?id=${id ?: -1}")
+        inlineTask = TaskScreen(this, null, id, ::closeInlineTask, ::load, text)
+        currentEditor = inlineTask
+    }
+
+    private fun closeInlineTask(): Boolean {
+        val editor = inlineTask ?: return true
+        if (!editor.saveForLeave()) return false
+        if (currentEditor === editor) currentEditor = null
+        inlineTask = null; editor.dispose(); focusRevision++; load()
+        return true
     }
 
     internal fun closeEditor() {
         if (pendingCapture != null) openCapture()
+        else if (inlineTask != null) closeInlineTask()
         else if (currentEditor?.saveForLeave() != false) navController.popBackStack()
     }
 
@@ -543,9 +620,10 @@ class MainActivity : ComponentActivity() {
         fun shortcut(label: String, key: Int, modifiers: Int = 0) = KeyboardShortcutInfo(label, key, modifiers)
         val alt = KeyEvent.META_ALT_ON; val shift = KeyEvent.META_SHIFT_ON; val ctrl = KeyEvent.META_CTRL_ON
         data.add(KeyboardShortcutGroup("Lists", listOf(
-            shortcut("New note", KeyEvent.KEYCODE_N, alt), shortcut("New note", KeyEvent.KEYCODE_N, shift),
+            shortcut("New note / to-do", KeyEvent.KEYCODE_N, alt), shortcut("New note", KeyEvent.KEYCODE_N, shift),
             shortcut("New to-do", KeyEvent.KEYCODE_T, alt), shortcut("New to-do", KeyEvent.KEYCODE_T, shift),
-            shortcut("Switch Notes / To-dos", KeyEvent.KEYCODE_SPACE, shift), shortcut("Delete row", KeyEvent.KEYCODE_DEL),
+             shortcut("Switch Notes / To-dos (Shift+Space / Alt+Space)", KeyEvent.KEYCODE_SPACE, shift),
+             shortcut("Switch Notes / To-dos", KeyEvent.KEYCODE_SPACE, alt), shortcut("Delete row", KeyEvent.KEYCODE_DEL),
             shortcut("Toggle done", KeyEvent.KEYCODE_D, ctrl), shortcut("Cancel selection", KeyEvent.KEYCODE_ESCAPE),
             shortcut("Undo delete", KeyEvent.KEYCODE_Z, ctrl))))
         data.add(KeyboardShortcutGroup("Editors", listOf(
@@ -559,6 +637,11 @@ class MainActivity : ComponentActivity() {
         if (currentEditor?.saveForLeave() == false) return
         val captureText = navController.currentBackStackEntry?.takeIf { it.destination.route == "note-picker" }
             ?.savedStateHandle?.get<String>("capture_text")
+        if (action == CreationShortcut.TASK) {
+            navController.popBackStack("list", false)
+            openTask(null, captureText)
+            return
+        }
         runCatching {
             if (action == CreationShortcut.NOTE) {
                 val id = DatabaseHelper(this).use { it.insertNote("", "") }

@@ -54,9 +54,12 @@ class TaskRowGeometryTest {
                                 provided = line != AlignmentLine.Unspecified
                                 baseline = it.positionInRoot().y + line
                             }
-                            if (editor) TaskEditorInput(androidx.compose.foundation.text.input.rememberTextFieldState("First line\nSecond line\nThird line"),
-                                "Task text", checked, modifier = label)
-                            else Text("First line\nSecond line\nThird line", modifier = label, style = style)
+                             if (editor) TaskEditorInput(androidx.compose.foundation.text.input.rememberTextFieldState("First line\nSecond line\nThird line"),
+                                 "Task text", checked, modifier = label)
+                             else Text("First line\nSecond line\nThird line", modifier = label, style = style)
+                             if (editor) TextButton(onClick = {}, modifier = Modifier.heightIn(min = 48.dp).testTag("done")) {
+                                 Text("Done")
+                             }
                         }
                     }
                 }
@@ -72,6 +75,11 @@ class TaskRowGeometryTest {
             assertEquals("first-line center: $font scale=$fontScale editor=$input", baseline - delta, center, 2f)
             val rect = compose.onNodeWithTag("label").fetchSemanticsNode().boundsInRoot
             assertTrue("label beside checkbox", rect.left >= check.fetchSemanticsNode().boundsInRoot.right)
+            if (input) {
+                val done = compose.onNodeWithTag("done").assertIsDisplayed().assertHeightIsAtLeast(48.dp)
+                    .fetchSemanticsNode().boundsInRoot
+                assertTrue("inline input clears Done: $font scale=$fontScale", rect.right <= done.left)
+            }
             check.performClick().assertIsOn()
             val results = mutableListOf<TextLayoutResult>()
             compose.onNodeWithTag("label").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult) { it(results) }

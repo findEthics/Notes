@@ -9,7 +9,7 @@ class KeyboardShortcutsTest {
             for (down in listOf(false, true)) for (repeat in 0..1)
                 for (focused in listOf(false, true)) for (extra in listOf(false, true)) {
                     val expected = if (!down || repeat != 0 || focused || extra) null else when {
-                        key == 62 && mask == 4 -> ListAction.SwitchSection
+                        key == 62 && (mask == 4 || mask == 2) -> ListAction.SwitchSection
                         (key == 67 || key == 112) && mask == 0 -> ListAction.Delete
                         key == 32 && mask == 1 -> ListAction.ToggleDone
                         key == 54 && mask == 1 -> ListAction.Undo

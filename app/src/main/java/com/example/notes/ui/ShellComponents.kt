@@ -142,7 +142,7 @@ fun TaskEditorInput(state: TextFieldState, label: String,
     BasicTextField(state = state, inputTransformation = inputTransformation,
         textStyle = style.copy(color = MaterialTheme.colorScheme.onSurface),
         cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
-        modifier = modifier.focusRing().semantics { contentDescription = label }.heightIn(min = 48.dp),
+        modifier = modifier.focusRing().semantics { contentDescription = label }.heightIn(min = 48.dp, max = 220.dp),
         decorator = { inner ->
             Box(Modifier.padding(vertical = 8.dp)) {
                 if (state.text.isEmpty()) Text(label, style = style, color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -14,8 +14,11 @@ import androidx.compose.ui.text.style.TextDecoration
 /** Plain-text storage contract; spans never change characters or offsets. */
 fun splitNote(text: String): Pair<String, String> {
     val end = text.indexOf('\n')
-    return if (end >= 0) text.substring(0, end).trim() to text.substring(end + 1).trim()
-    else text.trim() to ""
+    if (end < 0) return text.trim() to ""
+    val title = text.substring(0, end).trim()
+    val rest = text.substring(end + 1)
+    val body = rest.trim()
+    return title to if (title.isNotEmpty() && body.isNotEmpty() && Regex("^[ \\t]*\\n").containsMatchIn(rest)) "\n$body" else body
 }
 
 fun restoredNoteText(title: String, content: String): String =
@@ -45,7 +48,8 @@ fun normalizedNoteSelection(value: EditorText): TextRange {
     fun offset(raw: Int): Int {
         val position = raw.coerceIn(0, text.length)
         val normalized = if (bodyLength > 0 && position > newline)
-            titleLength + 1 + (position - body.first).coerceIn(0, bodyLength)
+            titleLength + 1 + (if (savedBody.startsWith('\n') && position > newline + 1) 1 else 0) +
+                (position - body.first).coerceIn(0, bodyLength)
         else (position - title.first).coerceIn(0, titleLength)
         var inserted = 0
         var lineStart = 0
@@ -145,7 +149,7 @@ fun TextFieldBuffer.isCaretNewline(): Boolean {
 val NoteInputTransformation = InputTransformation {
     val before = EditorText(originalText.toString(), originalSelection)
     val next = if (isCaretNewline()) noteChecklistEnter(before)
-    else if (changes.changeCount == 1 && originalSelection.collapsed &&
+    else if (changes.changeCount == 1 && originalSelection.collapsed && originalSelection.end > 0 &&
         changes.getRange(0).collapsed &&
         changes.getOriginalRange(0) == TextRange(originalSelection.end - 1, originalSelection.end))
         noteChecklistBackspace(before)

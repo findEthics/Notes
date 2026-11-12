@@ -2,6 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.example.notes">
 
+    <queries><package android:name="com.galaxyrio.gracelauncher" /></queries>
     <application
         android:allowBackup="true"
         android:enableOnBackInvokedCallback="true"
@@ -10,6 +11,7 @@
         android:roundIcon="@mipmap/notes_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.EInkNotes">
+        <provider android:name=".NotesCaptureProvider" android:authorities="com.example.notes.capture" android:exported="true" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

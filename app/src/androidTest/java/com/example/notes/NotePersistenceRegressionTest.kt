@@ -4,6 +4,7 @@ import android.content.Intent
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteException
 import android.database.sqlite.SQLiteOpenHelper
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import org.junit.Rule
@@ -186,7 +187,9 @@ class NotePersistenceRegressionTest {
                 compose.onNodeWithTag("error").assertExists()
                 scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
                 text().assertTextEquals("$prefix\nUnsaved")
-                compose.onNodeWithTag("leave-input").performClick()
+                text().performKeyInput { pressKey(Key.Tab) }
+                compose.onNodeWithTag("done").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.RequestFocus)
+                text().assertIsNotFocused()
                 for (code in listOf(android.view.KeyEvent.KEYCODE_N, android.view.KeyEvent.KEYCODE_T)) {
                     compose.waitForIdle()
                     scenario.onActivity { activity ->

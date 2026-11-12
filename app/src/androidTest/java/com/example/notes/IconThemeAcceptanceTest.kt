@@ -68,7 +68,7 @@ class IconThemeAcceptanceTest {
         bitmap.recycle()
         if (blackEdge && night) {
             // Inspect rendered icon ink inside the target, excluding the outer focus border.
-            val tag = if (compose.onAllNodesWithTag("settings").fetchSemanticsNodes().isEmpty()) "font-picker" else "settings"
+            val tag = if (compose.onAllNodesWithTag("settings").fetchSemanticsNodes().isEmpty()) "insert-checkbox" else "settings"
             val gear = compose.onNodeWithTag(tag).captureToImage().toPixelMap()
             var visibleInk = 0
             for (y in gear.height / 4 until gear.height * 3 / 4)
@@ -76,7 +76,7 @@ class IconThemeAcceptanceTest {
                     val pixel = gear[x, y]
                     if ((pixel.red + pixel.green + pixel.blue) / 3 > 0.5f) visibleInk++
                 }
-            assertTrue("Font control has visible foreground ink in dark $name", visibleInk >= 10)
+            assertTrue("Editor/shell control has visible foreground ink in dark $name", visibleInk >= 10)
         }
     }
     private fun shellGeometry() {
@@ -91,7 +91,7 @@ class IconThemeAcceptanceTest {
         compose.onNodeWithText("Select notes").assertDoesNotExist()
     }
     private fun settings(name: String) {
-        compose.onNodeWithTag(if (name.contains("editor")) "font-picker" else "settings").performClick()
+        compose.onNodeWithTag("settings").performClick()
         compose.onNodeWithTag("font-LATO").assertIsSelected()
         shot("$name-settings", false)
         compose.onNode(hasText("Done") and hasAnyAncestor(isDialog())).performClick()
@@ -116,8 +116,7 @@ class IconThemeAcceptanceTest {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             ready("note-$note"); system(scenario); shellGeometry(); shot("notes-populated")
             settings("notes")
-            compose.onNodeWithTag("select-notes").performClick()
-            compose.onNodeWithTag("note-$note").performClick()
+            compose.onNodeWithTag("note-$note").performTouchInput { longClick() }
             compose.onNodeWithTag("delete-selected").assertIsEnabled()
             shot("notes-selection"); shellGeometry()
             compose.onNodeWithText("Cancel").performClick()
@@ -146,22 +145,25 @@ class IconThemeAcceptanceTest {
             assertTrue("Viewport clears footer", compose.onNodeWithTag("note-viewport")
                 .fetchSemanticsNode().boundsInRoot.bottom <= footer.top + 1)
             shot("note-editor-ime-actions")
-            compose.onNodeWithTag("leave-input").performClick(); compose.waitUntil(10000) { ime(scenario) == 0 }
-            shot("note-editor-unfocused"); settings("note-editor")
+            compose.onNodeWithTag("font-picker").assertDoesNotExist()
+            compose.onNodeWithTag("leave-input").assertDoesNotExist()
+            key(KeyEvent.KEYCODE_TAB)
+            compose.onNodeWithTag("note-text").assertIsNotFocused()
+            scenario.onActivity { it.window.insetsController!!.hide(WindowInsets.Type.ime()) }
+            compose.waitUntil(10000) { ime(scenario) == 0 }
+            shot("note-editor-unfocused")
         }
         launchTask(task).use { scenario ->
             ready("task-text"); system(scenario)
-            compose.waitUntil(10000) {
-                compose.onNodeWithTag("task-fields").fetchSemanticsNode().boundsInRoot.bottom <=
-                    compose.onNodeWithTag("task-actions").fetchSemanticsNode().boundsInRoot.top + 1
-            }
+            compose.onNodeWithTag("section-TASKS").assertIsSelected()
+            compose.onNodeWithTag("items").assertIsDisplayed()
+            compose.onNodeWithTag("task-$checked").assertIsDisplayed()
             shot("task-editor")
             val fields = compose.onNodeWithTag("task-fields").fetchSemanticsNode().boundsInRoot
-            compose.onNodeWithTag("settings").assertDoesNotExist()
-            val actions = compose.onNodeWithTag("task-actions").fetchSemanticsNode().boundsInRoot
-            assertTrue("Task fields clear footer", fields.bottom <= actions.top + 1)
-            val leave = compose.onNodeWithTag("leave-input").fetchSemanticsNode().boundsInRoot
-            assertTrue("Keyboard control in footer", leave.top >= actions.top && leave.bottom <= actions.bottom)
+            compose.onNodeWithTag("settings").assertIsDisplayed()
+            compose.onNodeWithTag("task-actions").assertDoesNotExist()
+            compose.onNodeWithTag("font-picker").assertDoesNotExist()
+            compose.onNodeWithTag("leave-input").assertDoesNotExist()
             compose.onNodeWithTag("parent-completed").performClick().assertIsOn()
             shot("task-editor-toggled")
             compose.onNodeWithTag("task-text").performClick()
@@ -171,10 +173,14 @@ class IconThemeAcceptanceTest {
             compose.onNodeWithTag("done").assertIsDisplayed()
             val input = compose.onNodeWithTag("task-text").fetchSemanticsNode().boundsInRoot
             val done = compose.onNodeWithTag("done").fetchSemanticsNode().boundsInRoot
-            assertTrue("Task input clears footer", input.bottom <= done.top)
+            assertTrue("Task input clears inline Done", input.right <= done.left)
+            val currentFields = compose.onNodeWithTag("task-fields").fetchSemanticsNode().boundsInRoot
+            assertTrue("Done stays in task row", done.top >= currentFields.top && done.bottom <= currentFields.bottom)
             assertTrue("Task Done above IME", done.bottom <= compose.onNode(isRoot() and hasAnyDescendant(hasTestTag("task-fields"))).fetchSemanticsNode().boundsInRoot.bottom - ime(scenario) + 1)
-            println("GEOMETRY $mode fields=$fields actions=$actions input=$input done=$done ime=${ime(scenario)}")
-            compose.onNodeWithTag("leave-input").performClick(); compose.waitUntil(10000) { ime(scenario) == 0 }
+            println("GEOMETRY $mode fields=$fields input=$input done=$done ime=${ime(scenario)}")
+            key(KeyEvent.KEYCODE_TAB)
+            compose.onNodeWithTag("task-text").assertIsNotFocused()
+            compose.waitUntil(10000) { ime(scenario) == 0 }
             shot("task-editor-unfocused")
             settings("task-editor")
         }
@@ -184,8 +190,8 @@ class IconThemeAcceptanceTest {
         }
         // UI removal is immediate; persistence waits until Undo expires or the list stops.
         ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java).putExtra(MainActivity.EXTRA_SECTION, 0)).use {
-            ready("note-$note"); compose.onNodeWithTag("select-notes").performClick()
-            compose.onNodeWithTag("note-$note").performClick(); compose.onNodeWithTag("delete-selected").performClick()
+            ready("note-$note"); compose.onNodeWithTag("note-$note").performTouchInput { longClick() }
+            compose.onNodeWithTag("delete-selected").performClick()
             compose.waitUntil(10000) { compose.onAllNodesWithTag("note-$note").fetchSemanticsNodes().isEmpty() }
             shot("notes-deleted"); assertNotNull(helper.getNoteById(note))
             compose.onNodeWithContentDescription("Dismiss").performClick()

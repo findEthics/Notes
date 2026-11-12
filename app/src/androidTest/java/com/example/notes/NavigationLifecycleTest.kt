@@ -1,6 +1,7 @@
 package com.example.notes
 
 import androidx.activity.BackEventCompat
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -20,7 +21,18 @@ class NavigationLifecycleTest {
             val id = helper.insertNote("", "")
             try {
                 launchNote(id).use { scenario ->
-                    compose.onNodeWithTag("leave-input").performClick()
+                    compose.onNodeWithTag("note-text").performKeyInput { pressKey(Key.Tab) }
+                    compose.onNodeWithTag("done").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.RequestFocus)
+                    compose.onNodeWithTag("note-text").assertIsNotFocused()
+                    scenario.onActivity {
+                        androidx.core.view.WindowCompat.getInsetsController(it.window, it.window.decorView)
+                            .hide(androidx.core.view.WindowInsetsCompat.Type.ime())
+                    }
+                    compose.waitUntil(10000) {
+                        var hidden = false
+                        scenario.onActivity { hidden = !it.window.decorView.rootWindowInsets.isVisible(android.view.WindowInsets.Type.ime()) }
+                        hidden
+                    }
                     scenario.onActivity {
                         it.onBackPressedDispatcher.dispatchOnBackStarted(BackEventCompat(0f, 600f, 0f, BackEventCompat.EDGE_LEFT))
                         it.onBackPressedDispatcher.dispatchOnBackProgressed(BackEventCompat(200f, 600f, 0.6f, BackEventCompat.EDGE_LEFT))

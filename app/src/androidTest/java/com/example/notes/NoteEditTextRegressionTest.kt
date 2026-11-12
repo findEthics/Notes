@@ -2,6 +2,7 @@ package com.example.notes
 
 import android.content.Intent
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
@@ -35,9 +36,23 @@ class NoteEditTextRegressionTest {
         return results.single()
     }
     private fun strikeCount() = layout().layoutInput.text.spanStyles.count { it.item.textDecoration == TextDecoration.LineThrough }
-    private fun tap(line: Int, duration: Long = 10, move: Boolean = false, back: Boolean = false, cancel: Boolean = false, multi: Boolean = false, atEnd: Boolean = false, startAbove: Boolean = false) {
-        // Exit input/IME first so the actual text and line metrics are fully visible.
-        compose.onNodeWithTag("leave-input").performClick()
+    private fun leaveInput(scenario: ActivityScenario<MainActivity>) {
+        // Move focus without activating a footer action or changing the caret/checklist.
+        input().performKeyInput { pressKey(Key.Tab) }
+        compose.onNodeWithTag("done").performSemanticsAction(SemanticsActions.RequestFocus)
+        input().assertIsNotFocused()
+        scenario.onActivity {
+            androidx.core.view.WindowCompat.getInsetsController(it.window, it.window.decorView)
+                .hide(androidx.core.view.WindowInsetsCompat.Type.ime())
+        }
+        compose.waitUntil(10000) {
+            var hidden = false
+            scenario.onActivity { hidden = !it.window.decorView.rootWindowInsets.isVisible(android.view.WindowInsets.Type.ime()) }
+            hidden
+        }
+    }
+    private fun tap(scenario: ActivityScenario<MainActivity>, line: Int, duration: Long = 10, move: Boolean = false, back: Boolean = false, cancel: Boolean = false, multi: Boolean = false, atEnd: Boolean = false, startAbove: Boolean = false) {
+        leaveInput(scenario)
         val l = layout()
         val p = Offset(if (atEnd) l.getHorizontalPosition(l.getLineEnd(line), false) + 4f else 8f, (l.getLineTop(line) + l.getLineBottom(line)) / 2)
         input().performTouchInput {
@@ -59,10 +74,10 @@ class NoteEditTextRegressionTest {
         input().assertTextEquals("\nBody\nSecond")
         assertEquals("", helper.getNoteById(id)!!.title)
     }
-    @Test fun emptyCheckboxMarkerSurvivesReloadAndCanBeTypedAndChecked() = editor("Title", "☐") { _, _ ->
+    @Test fun emptyCheckboxMarkerSurvivesReloadAndCanBeTypedAndChecked() = editor("Title", "☐") { scenario, _ ->
         input().assertTextEquals("Title\n☐ ")
         replace("Title\n☐ task")
-        tap(1)
+        tap(scenario, 1)
         input().assertTextEquals("Title\n☑ task")
         assertEquals(1, strikeCount())
     }
@@ -71,7 +86,7 @@ class NoteEditTextRegressionTest {
             input().assertTextEquals("$marker ")
             scenario.recreate()
             input().assertTextEquals("$marker ")
-            replace("$marker milk"); tap(0)
+            replace("$marker milk"); tap(scenario, 0)
             input().assertTextEquals("${if (marker == "☐") "☑" else "☐"} milk")
         }
     }
@@ -84,30 +99,30 @@ class NoteEditTextRegressionTest {
         replace("\nOther")
         assertTrue(layout().layoutInput.text.spanStyles.isEmpty())
     }
-    @Test fun onlyStationaryShortCheckboxTapToggles() = editor("Title", "☐ task") { _, _ ->
-        tap(1); input().assertTextEquals("Title\n☑ task")
-        tap(1); input().assertTextEquals("Title\n☐ task"); assertEquals(0, strikeCount())
-        tap(1, move = true); input().assertTextEquals("Title\n☐ task")
-        tap(1, move = true, back = true); input().assertTextEquals("Title\n☐ task")
-        tap(1, duration = 600); input().assertTextEquals("Title\n☐ task")
-        tap(1, cancel = true); input().assertTextEquals("Title\n☐ task")
-        tap(1, startAbove = true); input().assertTextEquals("Title\n☐ task")
-        tap(1, multi = true); input().assertTextEquals("Title\n☐ task")
-        replace("Title\n☐ "); tap(1, atEnd = true); input().assertTextEquals("Title\n☐ ")
+    @Test fun onlyStationaryShortCheckboxTapToggles() = editor("Title", "☐ task") { scenario, _ ->
+        tap(scenario, 1); input().assertTextEquals("Title\n☑ task")
+        tap(scenario, 1); input().assertTextEquals("Title\n☐ task"); assertEquals(0, strikeCount())
+        tap(scenario, 1, move = true); input().assertTextEquals("Title\n☐ task")
+        tap(scenario, 1, move = true, back = true); input().assertTextEquals("Title\n☐ task")
+        tap(scenario, 1, duration = 600); input().assertTextEquals("Title\n☐ task")
+        tap(scenario, 1, cancel = true); input().assertTextEquals("Title\n☐ task")
+        tap(scenario, 1, startAbove = true); input().assertTextEquals("Title\n☐ task")
+        tap(scenario, 1, multi = true); input().assertTextEquals("Title\n☐ task")
+        replace("Title\n☐ "); tap(scenario, 1, atEnd = true); input().assertTextEquals("Title\n☐ ")
         input().assertIsFocused().performTextInput("milk")
         input().assertTextEquals("Title\n☐ milk")
     }
-    @Test fun insertionUsesCurrentLineAndLongPressStillSelectsOrdinaryText() = editor { _, _ ->
+    @Test fun insertionUsesCurrentLineAndLongPressStillSelectsOrdinaryText() = editor { scenario, _ ->
         compose.onNodeWithTag("insert-checkbox").performClick()
         input().assertIsFocused().assertTextEquals("☐ Title\nbody").performTextInput("milk")
         input().assertTextEquals("☐ milkTitle\nbody")
         replace("ordinary selection text")
-        tap(0, duration = 600)
+        tap(scenario, 0, duration = 600)
         val range = input().fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.TextSelectionRange]
         assertTrue("Native long press selects text", range.start != range.end)
     }
-    @Test fun checkboxHitTestingUsesScrolledTextCoordinates() = editor("Title", "line\n".repeat(40) + "☐ scrolled") { _, _ ->
-        compose.onNodeWithTag("leave-input").performClick()
+    @Test fun checkboxHitTestingUsesScrolledTextCoordinates() = editor("Title", "line\n".repeat(40) + "☐ scrolled") { scenario, _ ->
+        leaveInput(scenario)
         val metrics = layout()
         val line = metrics.lineCount - 1
         val halfLine = (metrics.getLineBottom(line) - metrics.getLineTop(line)) / 2

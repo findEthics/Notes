@@ -11,9 +11,10 @@ enum class ListAction { SwitchSection, Delete, ToggleDone, CancelSelection, Undo
 fun listAction(key: Int, ctrl: Boolean, alt: Boolean, shift: Boolean, meta: Boolean,
     isKeyDown: Boolean, repeatCount: Int, textInputFocused: Boolean = false,
     extra: Boolean = false): ListAction? {
-    if (!isKeyDown || repeatCount != 0 || textInputFocused || extra || meta || alt) return null
+    if (!isKeyDown || repeatCount != 0 || textInputFocused || extra || meta) return null
     return when {
-        key == KeyEvent.KEYCODE_SPACE && shift && !ctrl -> ListAction.SwitchSection
+        key == KeyEvent.KEYCODE_SPACE && (shift != alt) && !ctrl -> ListAction.SwitchSection
+        alt -> null
         shift -> null
         key == KeyEvent.KEYCODE_D && ctrl -> ListAction.ToggleDone
         key == KeyEvent.KEYCODE_Z && ctrl -> ListAction.Undo

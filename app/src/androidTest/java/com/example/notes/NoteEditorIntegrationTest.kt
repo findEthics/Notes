@@ -12,12 +12,12 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.example.notes.ui.notesTypography
 import org.junit.*
 import org.junit.Assert.*
 import org.junit.runner.RunWith
@@ -44,6 +44,19 @@ class NoteEditorIntegrationTest {
         instrumentation.sendKeySync(KeyEvent(now, now, KeyEvent.ACTION_UP, code, 0, meta))
         instrumentation.waitForIdleSync()
     }
+    private fun focusDone() {
+        key(KeyEvent.KEYCODE_TAB)
+        compose.onNodeWithTag("done").performSemanticsAction(SemanticsActions.RequestFocus)
+        compose.onNodeWithTag("done").assertIsFocused()
+        text().assertIsNotFocused()
+    }
+    private fun hideIme(scenario: ActivityScenario<MainActivity>) {
+        scenario.onActivity {
+            androidx.core.view.WindowCompat.getInsetsController(it.window, it.window.decorView)
+                .hide(androidx.core.view.WindowInsetsCompat.Type.ime())
+        }
+        compose.waitUntil(10000) { ime(scenario) == 0 }
+    }
     private fun screenshot(name: String) {
         compose.waitForIdle()
         instrumentation.uiAutomation.waitForIdle(200, 3000)
@@ -56,6 +69,12 @@ class NoteEditorIntegrationTest {
         val list = mutableListOf<TextLayoutResult>()
         text().performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(list) }
         return list.single()
+    }
+    private fun assertFont(choice: FontChoice) {
+        val expected = notesTypography(choice).bodyLarge
+        val actual = layout().layoutInput.style
+        assertEquals(expected.fontFamily, actual.fontFamily)
+        assertEquals(expected.fontWeight, actual.fontWeight)
     }
     private fun ime(scenario: ActivityScenario<MainActivity>): Int {
         var bottom = 0
@@ -82,7 +101,8 @@ class NoteEditorIntegrationTest {
             val footer = compose.onNodeWithTag("note-actions").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
             assertTrue("Viewport clears fixed footer", viewport.bottom <= footer.top + 1)
             assertTrue("Footer stays above IME", footer.bottom <= root.bottom - ime(scenario) + 1)
-            for (tag in listOf("insert-checkbox", "font-picker", "leave-input", "done")) {
+            for (tag in listOf("font-picker", "leave-input")) compose.onNodeWithTag(tag).assertDoesNotExist()
+            for (tag in listOf("insert-checkbox", "done")) {
                 compose.onNodeWithTag(tag).assertIsDisplayed().assertHeightIsAtLeast(48.dp).assertWidthIsAtLeast(48.dp)
             }
             assertEquals(if (existing) "Existing note\nBody" else "",
@@ -91,9 +111,7 @@ class NoteEditorIntegrationTest {
             assertEquals(20.sp, layout().layoutInput.style.fontSize)
             if (existing) assertEquals(28.sp, layout().layoutInput.text.spanStyles.first().item.fontSize)
             screenshot(if (existing) "note-existing-ime.png" else "note-new-ime.png")
-            compose.onNodeWithTag("leave-input").performClick()
-            text().assertIsNotFocused()
-            compose.onNodeWithTag("done").assertIsFocused()
+            focusDone(); hideIme(scenario)
             screenshot("note-unfocused.png")
         }
     }
@@ -110,9 +128,9 @@ class NoteEditorIntegrationTest {
             val range = text().fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange]
             assertTrue(range.start != range.end)
             assertEquals(0, notes.hits); assertEquals(0, tasks.hits)
-            key(KeyEvent.KEYCODE_TAB); compose.onNodeWithTag("font-picker").assertIsFocused()
+            key(KeyEvent.KEYCODE_TAB); compose.onNodeWithTag("insert-checkbox").assertIsFocused()
             key(KeyEvent.KEYCODE_TAB, KeyEvent.META_SHIFT_ON); text().assertIsFocused()
-            compose.onNodeWithTag("leave-input").performClick(); compose.onNodeWithTag("done").assertIsFocused()
+            focusDone()
             key(KeyEvent.KEYCODE_TAB, KeyEvent.META_SHIFT_ON)
             compose.onNodeWithTag("insert-checkbox").assertIsFocused()
             key(KeyEvent.KEYCODE_SPACE)
@@ -124,7 +142,7 @@ class NoteEditorIntegrationTest {
         for (code in listOf(KeyEvent.KEYCODE_N, KeyEvent.KEYCODE_T)) for (meta in listOf(KeyEvent.META_ALT_ON, KeyEvent.META_SHIFT_ON)) {
             editor("shortcuts-${UUID.randomUUID()}", "Before") { _, id ->
                 loaded(); text().performTextReplacement("saved-$code-$meta\nBody")
-                compose.onNodeWithTag("leave-input").performClick()
+                focusDone()
                 val target = if (code == KeyEvent.KEYCODE_N) NoteScreen::class.java else TaskScreen::class.java
                 val monitor = navigationMonitor(target.name)
                 try {
@@ -163,7 +181,7 @@ class NoteEditorIntegrationTest {
         compose.onNodeWithTag("insert-checkbox").performClick()
         text().assertIsFocused().assertTextEquals(raw.removeSuffix("end") + "☐ end")
     }
-    @Test fun imeCompositionCopyPasteAndSettingsShortcutGateUseActiveInput() = editor { scenario, _ ->
+    @Test fun imeCompositionCopyPasteAndSettingsShortcutGateUseActiveInput() = editor("Clipboard", "") { scenario, _ ->
         loaded()
         text().performTextClearance()
         scenario.onActivity {
@@ -185,39 +203,53 @@ class NoteEditorIntegrationTest {
         try {
             for (code in listOf(KeyEvent.KEYCODE_N, KeyEvent.KEYCODE_T)) for (meta in listOf(KeyEvent.META_ALT_ON, KeyEvent.META_SHIFT_ON)) key(code, meta)
             assertEquals(0, notes.hits); assertEquals(0, tasks.hits)
-            compose.onNodeWithTag("font-picker").performClick()
+            compose.onNodeWithTag("font-picker").assertDoesNotExist()
+            compose.onNodeWithTag("leave-input").assertDoesNotExist()
+            compose.onNodeWithTag("done").performClick()
+            compose.waitUntil(10000) { compose.onAllNodesWithTag("settings").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("settings").performClick()
             for (code in listOf(KeyEvent.KEYCODE_N, KeyEvent.KEYCODE_T)) for (meta in listOf(KeyEvent.META_ALT_ON, KeyEvent.META_SHIFT_ON)) key(code, meta)
             assertEquals(0, notes.hits); assertEquals(0, tasks.hits)
             compose.onNode(hasText("Done") and hasAnyAncestor(isDialog())).performClick()
         } finally { notes.close(); tasks.close() }
     }
 
-    @Test fun fontsImmediatelyApplyPersistAndDoNotResetSelectionAndDarkSurfacesAndBars() {
+    @Test fun homeFontsApplyInEditorPersistSelectionAndDarkSurfacesAndBars() {
         val old = FontSettings(context).use { it.choice }
         val mode = context.getSystemService(UiModeManager::class.java)
         try {
-            editor("Fonts", "☑ Checked\nBody") { scenario, _ ->
-                loaded()
+            val id = helper.insertNote("Fonts", "☑ Checked\nBody"); ids.add(id)
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                compose.waitUntil(10000) { compose.onAllNodesWithTag("settings").fetchSemanticsNodes().isNotEmpty() }
                 for (choice in FontChoice.entries) {
-                    text().performSemanticsAction(SemanticsActions.SetSelection) { it(1, 3, false) }
-                    compose.onNodeWithTag("font-picker").performClick()
+                    compose.onNodeWithTag("settings").performClick()
                     compose.onNodeWithTag("font-${choice.name}").performScrollTo().performClick().assertIsSelected()
                     compose.onNode(hasText("Done") and hasAnyAncestor(isDialog())).performClick()
-                    assertEquals(TextRange(1, 3), text().fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
                     assertEquals(choice, FontSettings(context).use { it.choice })
-                    if (choice == FontChoice.MONOSPACE) assertEquals(FontFamily.Monospace, layout().layoutInput.style.fontFamily)
+                    compose.onNodeWithTag("items").performScrollToKey("note-$id")
+                    compose.onNodeWithTag("note-$id").performClick()
+                    loaded()
+                    compose.onNodeWithTag("font-picker").assertDoesNotExist()
+                    compose.onNodeWithTag("leave-input").assertDoesNotExist()
+                    compose.onNodeWithTag("insert-checkbox").assertExists()
+                    compose.onNodeWithTag("done").assertExists()
+                    assertFont(choice)
+                    text().performSemanticsAction(SemanticsActions.SetSelection) { it(1, 3, false) }
                     scenario.recreate(); loaded()
                     compose.waitUntil(10000) {
                         text().fetchSemanticsNode().config[SemanticsProperties.Focused] && ime(scenario) > 0
                     }
+                    assertEquals(choice, FontSettings(context).use { it.choice })
+                    assertFont(choice)
                     assertEquals(TextRange(1, 3), text().fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+                    compose.onNodeWithTag("done").performClick()
+                    compose.waitUntil(10000) { compose.onAllNodesWithTag("settings").fetchSemanticsNodes().isNotEmpty() }
                 }
-                compose.onNodeWithTag("leave-input").performClick()
-                compose.waitUntil(10000) { ime(scenario) == 0 }
+                compose.onNodeWithTag("items").performScrollToKey("note-$id")
+                compose.onNodeWithTag("note-$id").performClick()
+                loaded()
+                focusDone(); hideIme(scenario)
                 screenshot("note-light.png")
-                compose.onNodeWithTag("font-picker").performClick()
-                screenshot("note-light-settings.png")
-                compose.onNode(hasText("Done") and hasAnyAncestor(isDialog())).performClick()
                 mode.setApplicationNightMode(UiModeManager.MODE_NIGHT_YES)
                 compose.waitUntil(10000) {
                     var dark = false
@@ -231,13 +263,8 @@ class NoteEditorIntegrationTest {
                     assertFalse(controller.isAppearanceLightStatusBars)
                     assertFalse(controller.isAppearanceLightNavigationBars)
                 }
-                compose.onNodeWithTag("leave-input").performClick()
-                compose.waitUntil(10000) { ime(scenario) == 0 }
+                focusDone(); hideIme(scenario)
                 screenshot("note-dark.png")
-                compose.onNodeWithTag("font-picker").performClick()
-                compose.waitUntil(10000) { ime(scenario) == 0 }
-                screenshot("note-dark-settings.png")
-                compose.onNode(hasText("Done") and hasAnyAncestor(isDialog())).performClick()
             }
         } finally { mode.setApplicationNightMode(UiModeManager.MODE_NIGHT_AUTO); FontSettings(context).use { it.select(old) } }
     }

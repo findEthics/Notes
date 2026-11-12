@@ -213,6 +213,10 @@ class DatabaseHelper(
         db.delete("tasks", "id=?", arrayOf(id.toString()))
     }
 
+    fun deleteTasks(ids: List<Long>): Int = writeTask { db ->
+        ids.sumOf { db.delete("tasks", "id = ?", arrayOf(it.toString())) }
+    }
+
     /** Commit one editor snapshot without changing its identity. */
     fun saveTaskDraft(draft: TaskDraft): TaskDraft {
         require(draft.text.isNotBlank()) { "Task text cannot be blank" }

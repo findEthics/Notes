@@ -29,6 +29,7 @@
     <string name="capture_open_failed">Could not open quick capture because changes could not be saved. Your edits and capture are retained; retry saving and closing.</string>
     <string name="task_text">Task text</string>
     <string name="delete_task">Delete task</string>
+    <string name="delete_checked">Delete all checked</string>
     <string name="task_blank">Enter task text before saving. Use Delete to remove an existing task.</string>
     <string name="leave_input">Hide keyboard and leave text field</string>
     <string name="task_actions">Task actions</string>

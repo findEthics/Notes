@@ -1,11 +1,9 @@
 package com.example.notes
 
-import android.content.Intent
 import android.os.Bundle
 import android.os.Parcel
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.foundation.text.input.TextFieldState
-import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.json.JSONObject
@@ -43,12 +41,12 @@ class SavedStateSizeProbeTest {
                     mutable.value=TaskDraft(text="p".repeat(length), completed=true)
                     text.edit { replace(0, this.length, "p".repeat(length)) }
                     instrumentation.callActivityOnSaveInstanceState(activity, saved)
-                    saved.putAll(activity.currentEditor!!.captureState())
                     mutable.value=before
                     text.edit { replace(0, this.length, beforeText) }
                 }
-                val id=saved.getLong(TaskScreen.EXTRA_TASK_ID); ids.add(id)
-                assertTrue(id>0); assertFalse(saved.containsKey("task_draft")); assertFalse(saved.containsKey("task_recovery"))
+                val editor = checkNotNull(saved.getBundle("inline_task"))
+                val id=editor.getLong(TaskScreen.EXTRA_TASK_ID); ids.add(id)
+                assertTrue(id>0); assertFalse(editor.containsKey("task_draft")); assertFalse(editor.containsKey("task_recovery"))
                 assertTrue(bytes(saved)<16_384)
                 DatabaseHelper(context).use { helper ->
                     assertEquals("p".repeat(length),helper.getTaskById(id)!!.text)
@@ -71,12 +69,13 @@ class SavedStateSizeProbeTest {
                     mutable.value=TaskDraft(text=payload, completed=true)
                     text.edit { replace(0, length, payload) }
                     instrumentation.callActivityOnSaveInstanceState(activity, saved)
-                    saved.putAll(activity.currentEditor!!.captureState())
                     mutable.value=before
                     text.edit { replace(0, length, beforeText) }
                 }
-                assertTrue(bytes(saved)<16_384); assertFalse(saved.containsKey("task_draft"))
-                token=checkNotNull(saved.getString("task_recovery"))
+                val editor = checkNotNull(saved.getBundle("inline_task"))
+                assertEquals(-1L, editor.getLong(TaskScreen.EXTRA_TASK_ID))
+                assertTrue(bytes(saved)<16_384); assertFalse(editor.containsKey("task_draft"))
+                token=checkNotNull(editor.getString("task_recovery"))
                 val encoded=recovery.claim(token!!).second
                 val json=JSONObject(encoded)
                 assertEquals(payload,json.getString("text"))

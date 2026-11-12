@@ -55,21 +55,21 @@ class ListKeyboardTest {
             bitmap.recycle()
         }
     }
-    @Test fun shiftSpaceSwitchesAndEscapeCancelsSelection() {
-        note()
+    @Test fun shiftAndAltSpaceSwitchAndEscapeCancelsSelection() {
+        val id = note()
         ActivityScenario.launch(MainActivity::class.java).use {
-            ready("select-notes")
-            key(KeyEvent.KEYCODE_SPACE, KeyEvent.META_SHIFT_ON)
-            compose.onNodeWithTag("section-TASKS").assertIsSelected()
-            key(KeyEvent.KEYCODE_SPACE, KeyEvent.META_SHIFT_ON)
-            compose.onNodeWithTag("section-NOTES").assertIsSelected()
-            repeat(2) {
-                key(KeyEvent.KEYCODE_SPACE, KeyEvent.META_SHIFT_ON)
-                compose.onNodeWithTag("section-TASKS").assertIsSelected()
-                key(KeyEvent.KEYCODE_SPACE, KeyEvent.META_SHIFT_ON)
-                compose.onNodeWithTag("section-NOTES").assertIsSelected()
+            ready("items")
+            for (meta in listOf(KeyEvent.META_SHIFT_ON, KeyEvent.META_ALT_ON)) {
+                repeat(3) {
+                    key(KeyEvent.KEYCODE_SPACE, meta)
+                    compose.onNodeWithTag("section-TASKS").assertIsSelected()
+                    key(KeyEvent.KEYCODE_SPACE, meta)
+                    compose.onNodeWithTag("section-NOTES").assertIsSelected()
+                }
             }
-            compose.onNodeWithTag("select-notes").performClick()
+            compose.onNodeWithTag("items").performScrollToKey("note-$id")
+            compose.onNodeWithTag("note-$id").performTouchInput { longClick() }
+            compose.onNodeWithTag("note-$id").assertIsSelected()
             key(KeyEvent.KEYCODE_ESCAPE)
             compose.onNodeWithTag("delete-selected").assertDoesNotExist()
         }
@@ -141,8 +141,13 @@ class ListKeyboardTest {
     @Test fun multiselectUndoRestoresBothIds() {
         val ids = listOf(note("One"), note("Two"))
         ActivityScenario.launch(MainActivity::class.java).use {
-            ready("select-notes"); compose.onNodeWithTag("select-notes").performClick()
-            ids.forEach { compose.onNodeWithTag("note-$it").performClick() }
+            ready("items")
+            compose.onNodeWithTag("items").performScrollToKey("note-${ids.first()}")
+            compose.onNodeWithTag("note-${ids.first()}").performTouchInput { longClick() }
+            ids.drop(1).forEach {
+                compose.onNodeWithTag("items").performScrollToKey("note-$it")
+                compose.onNodeWithTag("note-$it").performClick()
+            }
             compose.onNodeWithTag("delete-selected").performClick()
             compose.onNodeWithText("Deleted 2").assertIsDisplayed()
             compose.onNodeWithText("Undo").performClick()
@@ -168,6 +173,61 @@ class ListKeyboardTest {
             focus("note-$id"); key(KeyEvent.KEYCODE_ENTER)
             ready("note-text"); key(KeyEvent.KEYCODE_ESCAPE)
             ready("note-$id"); compose.onNodeWithTag("note-$id").assertIsFocused()
+        }
+    }
+    @Test fun longPressTaskSupportsSnackbarAndKeyboardUndoThenTimeoutCommit() {
+        val id = helper.insertTask("Long press to-do")!!; tasks.add(id)
+        ActivityScenario.launch(MainActivity::class.java).use {
+            compose.onNodeWithTag("section-TASKS").performClick()
+            for (keyboardUndo in listOf(false, true)) {
+                ready("task-$id")
+                compose.onNodeWithTag("items").performScrollToKey("task-$id")
+                compose.onNodeWithTag("task-$id").performTouchInput { longClick() }
+                compose.onNodeWithText("Deleted 1").assertIsDisplayed()
+                compose.onNodeWithTag("task-$id").assertDoesNotExist()
+                assertEquals(id, helper.getTaskById(id)!!.id)
+                if (keyboardUndo) key(KeyEvent.KEYCODE_Z, KeyEvent.META_CTRL_ON)
+                else compose.onNodeWithText("Undo").performClick()
+                ready("task-$id")
+                assertEquals(id, helper.getTaskById(id)!!.id)
+            }
+            compose.onNodeWithTag("task-$id").performTouchInput { longClick() }
+            compose.onNodeWithText("Deleted 1").assertIsDisplayed()
+            compose.waitUntil(15000) { helper.getTaskById(id) == null }
+            compose.onNodeWithTag("task-$id").assertDoesNotExist()
+        }
+    }
+    @Test fun deleteCheckedSupportsBothUndoPathsAndOnlyCommitsCheckedTasks() {
+        val checked = listOf(helper.insertTask("Checked one", true)!!, helper.insertTask("Checked two", true)!!)
+        val unchecked = helper.insertTask("Keep unchecked")!!
+        tasks.addAll(checked + unchecked)
+        ActivityScenario.launch(MainActivity::class.java).use {
+            compose.onNodeWithTag("section-TASKS").performClick()
+            for (keyboardUndo in listOf(false, true)) {
+                ready("delete-checked")
+                compose.onNodeWithTag("delete-checked").performClick()
+                compose.onNodeWithText("Deleted 2").assertIsDisplayed()
+                compose.onNodeWithTag("delete-checked").assertDoesNotExist()
+                checked.forEach { id ->
+                    compose.onNodeWithTag("task-$id").assertDoesNotExist()
+                    assertTrue(helper.getTaskById(id)!!.completed)
+                }
+                compose.onNodeWithTag("task-$unchecked").assertIsDisplayed()
+                assertFalse(helper.getTaskById(unchecked)!!.completed)
+                if (keyboardUndo) key(KeyEvent.KEYCODE_Z, KeyEvent.META_CTRL_ON)
+                else compose.onNodeWithText("Undo").performClick()
+                ready("delete-checked")
+                checked.forEach { id ->
+                    compose.onNodeWithTag("task-$id").assertExists()
+                    assertEquals(id, helper.getTaskById(id)!!.id)
+                    assertTrue(helper.getTaskById(id)!!.completed)
+                }
+            }
+            compose.onNodeWithTag("delete-checked").performClick()
+            compose.onNodeWithText("Deleted 2").assertIsDisplayed()
+            compose.waitUntil(15000) { checked.all { helper.getTaskById(it) == null } }
+            assertFalse(helper.getTaskById(unchecked)!!.completed)
+            compose.onNodeWithTag("task-$unchecked").assertIsDisplayed()
         }
     }
     @Test fun creationShortcutsDoNotReplaceEditorWhileTyping() {

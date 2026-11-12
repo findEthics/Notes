@@ -29,8 +29,9 @@ class NoteSelectionRegressionTest {
         val selectedIds = fixtureIds.take(2).toSet()
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             awaitLoaded()
-            compose.onNodeWithTag("select-notes").performClick()
-            selectedIds.forEach { id -> scrollTo(id); compose.onNodeWithTag("note-$id").performClick() }
+            scrollTo(selectedIds.first())
+            compose.onNodeWithTag("note-${selectedIds.first()}").performTouchInput { longClick() }
+            selectedIds.drop(1).forEach { id -> scrollTo(id); compose.onNodeWithTag("note-$id").performClick() }
             scrollTo(orderedIds.last())
             selectedIds.forEach { id -> scrollTo(id); compose.onNodeWithTag("note-$id").assertIsSelected() }
             scenario.recreate()
@@ -47,9 +48,8 @@ class NoteSelectionRegressionTest {
         fixtureIds.add(helper.insertNote("back selection", "Preview"))
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             awaitLoaded()
-            compose.onNodeWithTag("select-notes").performClick()
             scrollTo(fixtureIds.single())
-            compose.onNodeWithTag("note-${fixtureIds.single()}").performClick()
+            compose.onNodeWithTag("note-${fixtureIds.single()}").performTouchInput { longClick() }
             scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
             compose.onNodeWithTag("delete-selected").assertDoesNotExist()
             scenario.onActivity { assertFalse(it.isFinishing) }
@@ -57,7 +57,8 @@ class NoteSelectionRegressionTest {
         }
     }
     private fun awaitLoaded() = compose.waitUntil(20_000) {
-        compose.onAllNodesWithTag("select-notes").fetchSemanticsNodes().isNotEmpty()
+        compose.onAllNodesWithTag("items").fetchSemanticsNodes().isNotEmpty() &&
+            compose.onAllNodesWithTag("loading").fetchSemanticsNodes().isEmpty()
     }
     private fun scrollTo(id: Long) {
         compose.onNodeWithTag("items").performScrollToKey("note-$id")

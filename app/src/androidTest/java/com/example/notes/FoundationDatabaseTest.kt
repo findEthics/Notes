@@ -195,6 +195,24 @@ class FoundationDatabaseTest {
     }
 
     @Test
+    fun batchTaskDeleteCountsRowsAndRollsBackOnInjectedFailure() {
+        val a = helper.insertTask("first", true)!!
+        val b = helper.insertTask("second", true)!!
+        val keep = helper.insertTask("unchecked")!!
+        val before = helper.getTaskSummaries()
+        helper.writableDatabase.use { db ->
+            db.execSQL("CREATE TRIGGER reject_batch_delete BEFORE DELETE ON tasks " +
+                "WHEN OLD.id=$b BEGIN SELECT RAISE(ABORT, 'injected batch failure'); END")
+        }
+        assertThrows(SQLiteException::class.java) { helper.deleteTasks(listOf(a, b)) }
+        assertEquals(before, helper.getTaskSummaries())
+        helper.writableDatabase.use { it.execSQL("DROP TRIGGER reject_batch_delete") }
+        assertEquals(0, helper.deleteTasks(emptyList()))
+        assertEquals(2, helper.deleteTasks(listOf(a, b, a, 900)))
+        assertEquals(listOf(keep), helper.getTaskSummaries().map { it.task.id })
+    }
+
+    @Test
     fun multiNoteDeleteAndTaskDeleteAreAtomicOnInjectedFailure() {
         val a = helper.insertNote("a", "body")
         val b = helper.insertNote("b", "body")
