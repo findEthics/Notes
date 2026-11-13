@@ -1,5 +1,7 @@
 package com.example.notes
 
+import android.app.Activity
+import android.app.Instrumentation
 import android.app.UiModeManager
 import android.content.Context
 import android.content.Intent
@@ -102,17 +104,54 @@ class NoteEditorIntegrationTest {
             assertTrue("Viewport clears fixed footer", viewport.bottom <= footer.top + 1)
             assertTrue("Footer stays above IME", footer.bottom <= root.bottom - ime(scenario) + 1)
             for (tag in listOf("font-picker", "leave-input")) compose.onNodeWithTag(tag).assertDoesNotExist()
-            for (tag in listOf("insert-checkbox", "done")) {
+            for (tag in listOf("insert-checkbox", "share-note", "done")) {
                 compose.onNodeWithTag(tag).assertIsDisplayed().assertHeightIsAtLeast(48.dp).assertWidthIsAtLeast(48.dp)
+            }
+            val share = compose.onNodeWithTag("share-note").assertContentDescriptionEquals("Share note").fetchSemanticsNode().boundsInRoot
+            val done = compose.onNodeWithTag("done").assertContentDescriptionEquals("Done").fetchSemanticsNode().boundsInRoot
+            val checkbox = compose.onNodeWithTag("insert-checkbox").fetchSemanticsNode().boundsInRoot
+            assertTrue("Share stays above Done", share.bottom <= done.top)
+            assertEquals("Right-side actions align", done.right, share.right, 1f)
+            assertEquals("Checkbox stays bottom-left", done.bottom, checkbox.bottom, 1f)
+            assertEquals("Checkbox corner-safe gutter", 20f * density, checkbox.left - footer.left, 1f)
+            assertEquals("Done corner-safe gutter", 20f * density, footer.right - done.right, 1f)
+            assertEquals("IME action clearance", 8f * density, footer.bottom - done.bottom, 1f)
+             assertTrue("Done stays inside footer", done.top >= footer.top && done.bottom <= footer.bottom)
+             val content = compose.onNodeWithTag("note-content").fetchSemanticsNode().boundsInRoot
+             if (content.height >= 220f * density) {
+                 assertTrue("Share stays inside roomy footer", share.top >= footer.top)
+                 assertTrue("Roomy editor clears Share", viewport.bottom <= share.top)
+             }
+             println("NOTE_VIEWPORT fontScale=${context.resources.configuration.fontScale} heightDp=${viewport.height / density} footerDp=${footer.height / density} contentDp=${content.height / density} imeDp=${ime(scenario) / density}")
+            assertTrue("Left and right actions stay separate", checkbox.right <= done.left)
+            for (bounds in listOf(share, done, checkbox)) {
+                assertTrue("Action inside root", bounds.left >= root.left && bounds.right <= root.right &&
+                    bounds.top >= root.top && bounds.bottom <= root.bottom)
             }
             assertEquals(if (existing) "Existing note\nBody" else "",
                 text().fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
             if (!existing) compose.onNodeWithText("Note", useUnmergedTree = true).assertExists()
             assertEquals(20.sp, layout().layoutInput.style.fontSize)
             if (existing) assertEquals(28.sp, layout().layoutInput.text.spanStyles.first().item.fontSize)
-            screenshot(if (existing) "note-existing-ime.png" else "note-new-ime.png")
-            focusDone(); hideIme(scenario)
+             screenshot(if (existing) "note-existing-ime.png" else "note-new-ime.png")
+             hideIme(scenario)
+             compose.waitUntil(10000) {
+                 compose.onNodeWithTag("share-note").fetchSemanticsNode().boundsInRoot.top >=
+                     compose.onNodeWithTag("note-actions").fetchSemanticsNode().boundsInRoot.top
+             }
+             if (existing) screenshot("note-focused-no-ime.png")
+             focusDone(); hideIme(scenario)
             screenshot("note-unfocused.png")
+            val hiddenFooter = compose.onNodeWithTag("note-actions").fetchSemanticsNode().boundsInRoot
+            val hiddenDone = compose.onNodeWithTag("done").fetchSemanticsNode().boundsInRoot
+             val hiddenCheckbox = compose.onNodeWithTag("insert-checkbox").fetchSemanticsNode().boundsInRoot
+             val hiddenShare = compose.onNodeWithTag("share-note").fetchSemanticsNode().boundsInRoot
+             val hiddenViewport = compose.onNodeWithTag("note-viewport").fetchSemanticsNode().boundsInRoot
+             assertTrue("Hidden IME Share stays inside footer", hiddenShare.top >= hiddenFooter.top)
+             assertTrue("Hidden IME editor clears Share", hiddenViewport.bottom <= hiddenShare.top)
+            assertTrue("Hidden IME leaves physical corner clearance", hiddenFooter.bottom - hiddenDone.bottom >= 16f * density - 1)
+            assertEquals("Hidden IME actions stay level", hiddenDone.bottom, hiddenCheckbox.bottom, 1f)
+            assertTrue("Hidden IME Done stays inside footer", hiddenDone.top >= hiddenFooter.top && hiddenDone.bottom <= hiddenFooter.bottom)
         }
     }
     @Test fun nativeUppercaseSelectionTabDpadAndEnterSpaceKeepEditingSafe() = editor { _, _ ->
@@ -130,7 +169,11 @@ class NoteEditorIntegrationTest {
             assertEquals(0, notes.hits); assertEquals(0, tasks.hits)
             key(KeyEvent.KEYCODE_TAB); compose.onNodeWithTag("insert-checkbox").assertIsFocused()
             key(KeyEvent.KEYCODE_TAB, KeyEvent.META_SHIFT_ON); text().assertIsFocused()
-            focusDone()
+            key(KeyEvent.KEYCODE_TAB); compose.onNodeWithTag("insert-checkbox").assertIsFocused()
+            key(KeyEvent.KEYCODE_TAB); compose.onNodeWithTag("share-note").assertIsFocused()
+            key(KeyEvent.KEYCODE_TAB); compose.onNodeWithTag("done").assertIsFocused()
+            key(KeyEvent.KEYCODE_TAB, KeyEvent.META_SHIFT_ON)
+            compose.onNodeWithTag("share-note").assertIsFocused()
             key(KeyEvent.KEYCODE_TAB, KeyEvent.META_SHIFT_ON)
             compose.onNodeWithTag("insert-checkbox").assertIsFocused()
             key(KeyEvent.KEYCODE_SPACE)
@@ -275,6 +318,61 @@ class NoteEditorIntegrationTest {
         compose.onNodeWithTag("done").performClick()
         compose.waitUntil(5000) { compose.onAllNodesWithTag("items").fetchSemanticsNodes().isNotEmpty() }
         assertEquals("Saved before Done", helper.getNoteById(id)!!.content)
+    }
+
+    @Test fun shareSavesDraftAndSendsExactPlainTextWithOptionalSubjectWithoutClosing() = editor("Before", "body") { _, id ->
+        loaded()
+        val choosers = mutableListOf<Intent>()
+        val monitor = object : Instrumentation.ActivityMonitor() {
+            override fun onStartActivity(intent: Intent): Instrumentation.ActivityResult? {
+                if (intent.action != Intent.ACTION_CHOOSER) return null
+                choosers.add(intent)
+                return Instrumentation.ActivityResult(Activity.RESULT_OK, null)
+            }
+        }
+        instrumentation.addMonitor(monitor)
+        try {
+            for (raw in listOf(" Shared title \n☐ Milk\n☑ Eggs ", "\n☐ Body without title")) {
+                text().performTextReplacement(raw)
+                compose.onNodeWithTag("share-note").performClick()
+                val chooser = choosers.last()
+                val send = requireNotNull(androidx.core.content.IntentCompat.getParcelableExtra(chooser, Intent.EXTRA_INTENT, Intent::class.java))
+                assertEquals(Intent.ACTION_SEND, send.action)
+                assertEquals("text/plain", send.type)
+                assertEquals(raw, send.getStringExtra(Intent.EXTRA_TEXT))
+                val (title, body) = splitNote(raw)
+                assertEquals(title.takeIf { it.isNotEmpty() }, send.getStringExtra(Intent.EXTRA_SUBJECT))
+                assertEquals(title.isNotEmpty(), send.hasExtra(Intent.EXTRA_SUBJECT))
+                assertEquals(title, helper.getNoteById(id)!!.title)
+                assertEquals(body, helper.getNoteById(id)!!.content)
+                text().assertIsDisplayed().assertTextEquals(raw)
+            }
+            assertEquals(2, choosers.size)
+        } finally { instrumentation.removeMonitor(monitor) }
+    }
+
+    @Test fun shareDoesNotLaunchForBlankDraftOrFailedSave() = editor("Committed", "body") { _, id ->
+        loaded()
+        val monitor = instrumentation.addMonitor(android.content.IntentFilter(Intent.ACTION_CHOOSER),
+            Instrumentation.ActivityResult(Activity.RESULT_OK, null), true)
+        val trigger = "note_share_failure"
+        try {
+            text().performTextReplacement(" \n\t ")
+            compose.onNodeWithTag("share-note").performClick()
+            assertEquals(0, monitor.hits)
+            assertEquals("Committed", helper.getNoteById(id)!!.title)
+            helper.writableDatabase.execSQL("CREATE TRIGGER $trigger BEFORE UPDATE ON notes WHEN OLD.id=$id BEGIN SELECT RAISE(ABORT, 'fixture write failure'); END")
+            text().performTextReplacement("Unsaved\n☐ draft")
+            compose.onNodeWithTag("share-note").performClick()
+            assertEquals(0, monitor.hits)
+            compose.onNodeWithTag("error").assertExists()
+            text().assertTextEquals("Unsaved\n☐ draft")
+            assertEquals("Committed", helper.getNoteById(id)!!.title)
+            assertEquals("body", helper.getNoteById(id)!!.content)
+        } finally {
+            helper.writableDatabase.execSQL("DROP TRIGGER IF EXISTS $trigger")
+            instrumentation.removeMonitor(monitor)
+        }
     }
 
     @Test fun hardwareChecklistEnterBackspaceToggleAndShiftEnter() = editor { scenario, _ ->

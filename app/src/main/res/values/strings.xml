@@ -37,6 +37,7 @@
     <string name="note_text">Note text</string>
     <string name="note_placeholder">Note</string>
     <string name="insert_checkbox">Insert checkbox</string>
+    <string name="share_note">Share note</string>
     <string name="shortcut_note_short">New note</string>
     <string name="shortcut_note_long">Create a new note</string>
     <string name="shortcut_todo_short">New to-do</string>

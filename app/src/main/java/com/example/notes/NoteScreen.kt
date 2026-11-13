@@ -3,9 +3,11 @@
 package com.example.notes
 
 import android.content.ContextWrapper
+import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import android.view.KeyEvent
+import android.view.RoundedCorner
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
@@ -15,8 +17,11 @@ import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.*
 import androidx.compose.ui.graphics.SolidColor
@@ -95,11 +100,23 @@ internal class NoteScreen(
             val keyboard = LocalSoftwareKeyboardController.current
             val focus = LocalFocusManager.current
             val view = LocalView.current
+            val density = LocalDensity.current
+            val imeVisible = WindowInsets.ime.getBottom(density) > 0
+            val cornerRadius = with(density) {
+                maxOf(
+                    view.rootWindowInsets?.getRoundedCorner(RoundedCorner.POSITION_BOTTOM_LEFT)?.radius ?: 0,
+                    view.rootWindowInsets?.getRoundedCorner(RoundedCorner.POSITION_BOTTOM_RIGHT)?.radius ?: 0
+                ).toDp()
+            }
+            // Physical corners still need clearance when system bars and the software keyboard are hidden.
+            val actionBottomPadding = if (imeVisible) 8.dp else maxOf(16.dp, cornerRadius)
             val windowFocused = LocalWindowInfo.current.isWindowFocused
             Scaffold(modifier = Modifier.onPreviewKeyEvent { handleShortcut(it.nativeKeyEvent) },
                     contentWindowInsets = WindowInsets.safeDrawing.union(WindowInsets.ime),
                     ) { padding ->
-                        Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).testTag("note-content")) {
+                         BoxWithConstraints(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).testTag("note-content")) {
+                         val compactActions = maxHeight < 220.dp
+                        Column(Modifier.fillMaxSize()) {
                             Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).testTag("note-viewport")) {
                                 error?.let { ErrorNotice(it) { if (ready) saveNote() else loadNote() } }
                                 if (ready) NoteInput(draft, Modifier.fillMaxWidth().padding(horizontal = 16.dp)
@@ -113,18 +130,35 @@ internal class NoteScreen(
                                         } else false
                                     })
                             }
-                                Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).testTag("note-actions").padding(horizontal = 16.dp),
-                                     verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                                        IconButton(onClick = { draft.editNote { insertNoteCheckbox(it) }; input.requestFocus(); keyboard?.show() },
-                                            enabled = ready, modifier = Modifier.size(48.dp).focusRing().testTag("insert-checkbox")) {
-                                            Icon(painterResource(R.drawable.ic_check_box), stringResource(R.string.insert_checkbox))
-                                        }
-                                        Spacer(Modifier.weight(1f))
-                                        TextButton(onClick = { if (saveNote()) finish() }, enabled = ready,
-                                            modifier = Modifier.heightIn(min = 48.dp).focusRequester(controls).focusRing().testTag("done")) {
-                                            Text(stringResource(R.string.done), style = MaterialTheme.typography.labelLarge)
-                                        }
-                                }
+                                Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).testTag("note-actions")
+                                    .padding(start = 20.dp, end = 20.dp, bottom = actionBottomPadding),
+                                     verticalAlignment = Alignment.Bottom,
+                                     horizontalArrangement = Arrangement.SpaceBetween) {
+                                         FloatingActionButton(onClick = { if (ready) { draft.editNote { insertNoteCheckbox(it) }; input.requestFocus(); keyboard?.show() } },
+                                             modifier = Modifier.focusRing().testTag("insert-checkbox"),
+                                             containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                             contentColor = MaterialTheme.colorScheme.onSecondaryContainer) {
+                                             Icon(painterResource(R.drawable.ic_check_box), contentDescription = stringResource(R.string.insert_checkbox))
+                                          }
+                                          // Only float Share when the full stack would crowd the IME viewport.
+                                          Column(Modifier.height(if (compactActions) 56.dp else 124.dp)
+                                              .wrapContentHeight(Alignment.Bottom, unbounded = true),
+                                              horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                              FloatingActionButton(onClick = ::shareNote,
+                                                  modifier = Modifier.focusRing().testTag("share-note"),
+                                                  containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                                  contentColor = MaterialTheme.colorScheme.onSecondaryContainer) {
+                                                  Icon(painterResource(R.drawable.ic_share), contentDescription = stringResource(R.string.share_note))
+                                              }
+                                              FloatingActionButton(onClick = { if (ready && saveNote()) finish() },
+                                                  modifier = Modifier.focusRequester(controls).focusRing().testTag("done"),
+                                                  containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                                  contentColor = MaterialTheme.colorScheme.onPrimaryContainer) {
+                                                  Icon(Icons.Default.Check, contentDescription = stringResource(R.string.done))
+                                              }
+                                          }
+                                  }
+                         }
                         }
                 }
                 // One request per destination/input lifetime, after the window can accept input.
@@ -140,6 +174,19 @@ internal class NoteScreen(
                 if (settingsOpen) FontSettingsDialog(settings) { settingsOpen = false }
     }
 
+    private fun shareNote() {
+        if (!ready) return
+        if (draft.text.toString().isBlank()) return
+        if (!saveNote()) return
+        val (title, _) = splitNote(draft.text.toString())
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            if (title.isNotEmpty()) putExtra(Intent.EXTRA_SUBJECT, title)
+            putExtra(Intent.EXTRA_TEXT, draft.text.toString())
+        }
+        runCatching { startActivity(Intent.createChooser(sendIntent, null)) }
+    }
+
     private fun applyPendingCapture() {
         if (!ready) return
         val capture = pendingText ?: return
@@ -151,9 +198,13 @@ internal class NoteScreen(
     private fun loadNote(applyCapture: Boolean = true) {
         runCatching { DatabaseHelper(this).use { it.getNoteById(noteId) } }
             .onSuccess {
-                draft.edit { replace(0, length, it?.let { note -> restoredNoteText(note.title, note.content) } ?: "") }
+                // A notification for our own save must not normalize the live draft or clear its undo history.
+                if (!ready || splitNote(draft.text.toString()) != (it?.title.orEmpty() to it?.content.orEmpty())) {
+                    draft.edit { replace(0, length, it?.let { note -> restoredNoteText(note.title, note.content) } ?: "") }
+                    draft.undoState.clearHistory()
+                }
                 lastSavedText = draft.text.toString()
-                draft.undoState.clearHistory(); ready = true; error = null
+                ready = true; error = null
                 if (applyCapture) applyPendingCapture()
             }
             .onFailure { Log.e("NoteScreen", "Load failed", it); error = getString(R.string.load_failed) }

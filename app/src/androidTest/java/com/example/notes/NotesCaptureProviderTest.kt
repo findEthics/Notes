@@ -55,7 +55,7 @@ class NotesCaptureProviderTest {
         assertTrue(id > 0)
         val note = requireNotNull(helper.getNoteById(id))
         assertEquals("Groceries", note.title)
-        assertEquals("Groceries buy milk and eggs", note.content)
+        assertEquals("☐ buy milk and eggs", note.content)
 
         for (filter in listOf(null, "gROcErIeS")) {
             val listed = call("list_notes", filter)
@@ -73,6 +73,21 @@ class NotesCaptureProviderTest {
         assertFalse(requireNotNull(excluded.getLongArray("ids")).contains(id))
     }
 
+    @Test fun createNoteSupportsTitleOnlyAndPreservesExistingCheckboxes() {
+        for ((text, content) in listOf("Shopping" to "", "Shopping ☐ Milk" to "☐ Milk", "Shopping ☑ Milk" to "☑ Milk")) {
+            val result = call("create_note", extras = Bundle().apply { putString("text", text) })
+            val id = result.getLong("id", -1L)
+            if (id > 0) notes.add(id)
+            assertTrue(result.getBoolean("ok"))
+            val note = requireNotNull(helper.getNoteById(id))
+            assertEquals("Shopping", note.title)
+            assertEquals(content, note.content)
+        }
+        val before = helper.getNotePreviews().map { it.id }.toSet()
+        assertFalse(call("create_note", extras = Bundle().apply { putString("text", " \n\t ") }).getBoolean("ok"))
+        assertEquals(before, helper.getNotePreviews().map { it.id }.toSet())
+    }
+
     @Test fun appendToTitleOnlyNoteKeepsBlankLineAfterEditorSaveAndReopen() {
         val id = helper.insertNote("Shopping", "").also { notes.add(it) }
         val result = call("append_note", extras = Bundle().apply {
@@ -80,21 +95,21 @@ class NotesCaptureProviderTest {
         })
         assertTrue(result.getBoolean("ok"))
         assertEquals("Shopping", helper.getNoteById(id)!!.title)
-        assertEquals("\nMilk", helper.getNoteById(id)!!.content)
+        assertEquals("\n☐ Milk", helper.getNoteById(id)!!.content)
         launchNote(id).use {
-            compose.onNodeWithTag("note-text").assertTextEquals("Shopping\n\nMilk")
+            compose.onNodeWithTag("note-text").assertTextEquals("Shopping\n\n☐ Milk")
             // Force a real normalized write rather than the clean-editor save fast path.
-            compose.onNodeWithTag("note-text").performTextReplacement("Shopping\n\nMilk ")
+            compose.onNodeWithTag("note-text").performTextReplacement("Shopping\n\n☐ Milk ")
             compose.onNodeWithTag("done").performClick()
             compose.waitUntil(10000) { compose.onAllNodesWithTag("items").fetchSemanticsNodes().isNotEmpty() }
             assertEquals("Shopping", helper.getNoteById(id)!!.title)
-            assertEquals("\nMilk", helper.getNoteById(id)!!.content)
+            assertEquals("\n☐ Milk", helper.getNoteById(id)!!.content)
         }
         launchNote(id).use {
-            compose.onNodeWithTag("note-text").assertTextEquals("Shopping\n\nMilk")
+            compose.onNodeWithTag("note-text").assertTextEquals("Shopping\n\n☐ Milk")
             compose.onNodeWithTag("done").performClick()
         }
-        assertEquals("\nMilk", helper.getNoteById(id)!!.content)
+        assertEquals("\n☐ Milk", helper.getNoteById(id)!!.content)
     }
 
     @Test fun appendToNoteWithBodySeparatesExistingAndAppendedTextWithBlankLine() {
@@ -104,6 +119,17 @@ class NotesCaptureProviderTest {
         })
         assertTrue(result.getBoolean("ok"))
         assertEquals("Work", helper.getNoteById(id)!!.title)
-        assertEquals("Line 1\n\nLine 2", helper.getNoteById(id)!!.content)
+        assertEquals("Line 1\n\n☐ Line 2", helper.getNoteById(id)!!.content)
+    }
+
+    @Test fun appendPreservesExistingCheckboxesWithoutAddingAnotherMarker() {
+        for (entry in listOf("☐ Milk", "☑ Milk")) {
+            val id = helper.insertNote("Shopping", "Existing").also { notes.add(it) }
+            val result = call("append_note", extras = Bundle().apply {
+                putLong("id", id); putString("text", entry)
+            })
+            assertTrue(result.getBoolean("ok"))
+            assertEquals("Existing\n\n$entry", helper.getNoteById(id)!!.content)
+        }
     }
 }

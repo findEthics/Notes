@@ -38,7 +38,7 @@ class CaptureAndInlineShortcutsTest {
     }
 
     @Test fun appendedBlankLineSurvivesEditingAndSelectionRestoration() {
-        for (text in listOf("Shopping\n\nMilk", "Shopping\nEggs\n\nMilk")) {
+        for (text in listOf("Shopping\n\nMilk", "Shopping\nEggs\n\nMilk", "Shopping\n\n☐ Milk", "Shopping\n☑ Eggs\n\n☐ Milk")) {
             val (title, body) = splitNote(text)
             assertEquals(text, restoredNoteText(title, body))
             for (offset in text.indices)
@@ -49,5 +49,13 @@ class CaptureAndInlineShortcutsTest {
         assertEquals("Shopping" to "\nMilk", splitNote("Shopping\n \t\n  Milk  \n"))
         assertEquals("Shopping" to "", splitNote("Shopping\n\n   "))
         assertEquals("" to "body\nsecond", splitNote("\n body\nsecond \n"))
+    }
+
+    @Test fun capturedNoteTitleAndChecklistBodyRoundtripWithoutDuplicatingTitle() {
+        for (body in listOf("", "☐ buy milk and eggs", "☑ bought milk")) {
+            val text = restoredNoteText("Groceries", body)
+            assertEquals(if (body.isEmpty()) "Groceries" else "Groceries\n$body", text)
+            assertEquals("Groceries" to body, splitNote(text))
+        }
     }
 }
