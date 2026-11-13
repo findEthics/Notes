@@ -54,6 +54,7 @@ internal class NoteScreen(
     private var ready by mutableStateOf(false)
     private var error by mutableStateOf<String?>(null)
     private var settingsOpen by mutableStateOf(false)
+    private var skipInitialResumeRefresh = true
     private var inputFocused = false
     private var lastSavedText: String? = null
     private val recovery by lazy { DraftRecovery(this, "note") }
@@ -89,7 +90,9 @@ internal class NoteScreen(
     override fun Content(settings: FontSettings) {
             DisposableEffect(Unit) {
                 val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-                    if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) refreshIfClean()
+                    if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                        if (skipInitialResumeRefresh) skipInitialResumeRefresh = false else refreshIfClean()
+                    }
                 }
                 activity.lifecycle.addObserver(observer)
                 onDispose { activity.lifecycle.removeObserver(observer) }
@@ -327,7 +330,7 @@ private fun NoteInput(value: TextFieldState, modifier: Modifier) {
                                     val end = textLayout.getLineEnd(line)
                                     val text = value.text.toString()
                                     val lineText = text.substring(start.coerceAtMost(text.length), end.coerceAtMost(text.length))
-                                    if ((lineText.startsWith("☐ ") || lineText.startsWith("☑ ")) && lineText.trim().length > 1) {
+                                    if (lineText.hasNoteCheckbox(0) && lineText.trim().length > 1) {
                                         value.edit { replace(start, start + 1, if (lineText[0] == '☐') "☑" else "☐") }
                                         change.consume()
                                     }

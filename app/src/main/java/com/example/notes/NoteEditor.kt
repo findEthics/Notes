@@ -65,7 +65,7 @@ fun normalizedNoteSelection(value: EditorText): TextRange {
 private fun noteLineStart(value: EditorText): Int =
     value.text.lastIndexOf('\n', value.selection.end - 1) + 1
 
-private fun String.hasNoteCheckbox(start: Int): Boolean =
+internal fun String.hasNoteCheckbox(start: Int): Boolean =
     startsWith("☐ ", start) || startsWith("☑ ", start)
 
 /** Toolbar insertion is idempotent; Ctrl+D also toggles an existing marker. */

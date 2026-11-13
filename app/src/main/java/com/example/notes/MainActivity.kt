@@ -66,7 +66,7 @@ class MainActivity : ComponentActivity() {
     private val executor = Executors.newSingleThreadExecutor()
     private var generation = 0
     private var resumed by mutableStateOf(false)
-    private var pendingCapture by mutableStateOf<QuickCapture?>(null)
+    private var pendingCaptures by mutableStateOf<List<QuickCapture>>(emptyList())
     private var settingsOpen by mutableStateOf(false)
     private data class PendingDelete(val section: Section, val ids: List<Long>)
     private var pendingDelete by mutableStateOf<PendingDelete?>(null)
@@ -91,8 +91,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val initialCapture = QuickCapture.from(intent)
         // Restored navigation owns the destination; never replay the Activity's original launch intent.
-        pendingCapture = savedInstanceState?.getBundle("capture")?.let(QuickCapture::restore)
-            ?: if (savedInstanceState == null) initialCapture else null
+        pendingCaptures = savedInstanceState?.getParcelableArrayList<Bundle>("captures")?.mapNotNull(QuickCapture::restore)
+            ?: if (savedInstanceState == null) listOfNotNull(initialCapture) else emptyList()
         creation = ViewModelProvider(this)[NoteCreation::class.java]
         creation.result.observe(this) { result ->
             if (resumed && result != null) {
@@ -121,9 +121,14 @@ class MainActivity : ComponentActivity() {
                 navController = rememberNavController()
                 var backProgress by remember { mutableFloatStateOf(0f) }
                 val currentEntry by navController.currentBackStackEntryAsState()
-                LaunchedEffect(pendingCapture, resumed, currentEntry) {
-                    if (resumed && pendingCapture != null) {
+                LaunchedEffect(pendingCaptures, resumed, currentEntry) {
+                    if (resumed && pendingCaptures.isNotEmpty()) {
                         withFrameNanos { }
+                        if (currentEntry?.destination?.route == "note/{id}") {
+                            // The previous capture must reach its editor before replacement saves it.
+                            while (currentEditor == null) withFrameNanos { }
+                            withFrameNanos { }
+                        }
                         openCapture()
                     }
                 }
@@ -390,10 +395,10 @@ class MainActivity : ComponentActivity() {
                 }) { settingsOpen = false }
     }
 
-    override fun onNewIntent(intent: Intent) {
+    public override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         QuickCapture.from(intent)?.let {
-            pendingCapture = it
+            pendingCaptures = pendingCaptures + it
             return
         }
         setIntent(intent)
@@ -416,7 +421,7 @@ class MainActivity : ComponentActivity() {
         outState.putInt("section", section.ordinal)
         outState.putBoolean("selection_mode", selectionMode)
         outState.putLongArray("selected_ids", selectedIds.toLongArray())
-        pendingCapture?.let { outState.putBundle("capture", it.save()) }
+        if (pendingCaptures.isNotEmpty()) outState.putParcelableArrayList("captures", ArrayList(pendingCaptures.map { it.save() }))
         pendingDelete?.let {
             outState.putInt("pending_delete_section", it.section.ordinal)
             outState.putLongArray("pending_delete_ids", it.ids.toLongArray())
@@ -557,7 +562,7 @@ class MainActivity : ComponentActivity() {
         else creation.begin()
     }
     private fun openCapture() {
-        val capture = pendingCapture ?: return
+        val capture = pendingCaptures.firstOrNull() ?: return
         if (currentEditor?.saveForLeave() == false) {
             currentEditor?.showError(getString(R.string.capture_open_failed))
             return
@@ -567,7 +572,7 @@ class MainActivity : ComponentActivity() {
         // A pending list insertion owns its row until abandoned; do not open it over a capture.
         creation.abandon()
         if (capture.action == QuickCapture.NEW_TODO) {
-            pendingCapture = null; settingsOpen = false
+            pendingCaptures = pendingCaptures.drop(1); settingsOpen = false
             navController.popBackStack("list", false)
             openTask(null, capture.text)
             return
@@ -578,8 +583,8 @@ class MainActivity : ComponentActivity() {
                 else -> "note-picker"
             }
         }.onSuccess { route ->
-            pendingCapture = null
-            section = if (capture.action == QuickCapture.NEW_TODO) Section.TASKS else Section.NOTES
+            pendingCaptures = pendingCaptures.drop(1)
+            section = Section.NOTES
             settingsOpen = false; cancelSelection()
             navController.navigate(route) { popUpTo("list"); launchSingleTop = false }
             navController.currentBackStackEntry?.savedStateHandle?.set("capture_text", capture.text)
@@ -611,7 +616,7 @@ class MainActivity : ComponentActivity() {
     }
 
     internal fun closeEditor() {
-        if (pendingCapture != null) openCapture()
+        if (pendingCaptures.isNotEmpty()) openCapture()
         else if (inlineTask != null) closeInlineTask()
         else if (currentEditor?.saveForLeave() != false) navController.popBackStack()
     }
@@ -643,12 +648,9 @@ class MainActivity : ComponentActivity() {
             return
         }
         runCatching {
-            if (action == CreationShortcut.NOTE) {
-                val id = DatabaseHelper(this).use { it.insertNote("", "") }
-                "note/$id"
-            } else "task?id=-1"
+            "note/${DatabaseHelper(this).use { it.insertNote("", "") }}"
         }.onSuccess { route ->
-            section = if (action == CreationShortcut.NOTE) Section.NOTES else Section.TASKS
+            section = Section.NOTES
             navController.navigate(route) { popUpTo(navController.currentDestination!!.id) { inclusive = true } }
             captureText?.let { navController.currentBackStackEntry?.savedStateHandle?.set("capture_text", it) }
         }.onFailure { error = getString(R.string.write_failed) }

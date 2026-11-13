@@ -45,10 +45,10 @@ class DraftRecoveryProcessTest {
                 scenario.onActivity { activity ->
                     val editor=activity.currentEditor as TaskScreen
                     val text=editor.javaClass.getDeclaredField("textState").apply { isAccessible=true }.get(editor) as TextFieldState
-                    text.edit { replace(0,length,payload) }
                     val now=android.os.SystemClock.uptimeMillis()
                     assertTrue(editor.handleShortcut(android.view.KeyEvent(now,now,android.view.KeyEvent.ACTION_DOWN,
                         android.view.KeyEvent.KEYCODE_D,0,android.view.KeyEvent.META_CTRL_ON)))
+                    text.edit { replace(0,length,payload) }
                 }
                 compose.waitForIdle()
                 compose.onNodeWithTag("task-text").assertTextEquals(payload)

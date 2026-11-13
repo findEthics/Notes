@@ -57,16 +57,14 @@ class DatabaseHelper(
         return writeTask { db ->
             val values = ContentValues().apply {
                 put(COLUMN_TITLE, title); put(COLUMN_CONTENT, content)
-                put(COLUMN_TIMESTAMP, nextNoteTimestamp(db))
+                put(COLUMN_TIMESTAMP, nextTimestamp(db, TABLE_NOTES, COLUMN_TIMESTAMP))
             }
             db.insertOrThrow(TABLE_NOTES, null, values)
         }
     }
 
     // List-only projections: at most 200 characters plus an ellipsis; editor reads stay lossless.
-    fun getNotePreviews(): List<Note> {
-        val notesList = mutableListOf<Note>()
-        val db = this.readableDatabase
+    fun getNotePreviews(): List<Note> = readableDatabase.use { db ->
         val query = """
             SELECT $COLUMN_ID,
                 substr($COLUMN_TITLE, 1, 200) || CASE WHEN length($COLUMN_TITLE) > 200 THEN '…' ELSE '' END AS $COLUMN_TITLE,
@@ -79,53 +77,54 @@ class DatabaseHelper(
                 $COLUMN_TIMESTAMP
             FROM $TABLE_NOTES ORDER BY $COLUMN_TIMESTAMP DESC, $COLUMN_ID DESC
         """.trimIndent()
-        val cursor = db.rawQuery(query, null)
-
-        if (cursor.moveToFirst()) {
-            do {
-                val id = cursor.getLong(cursor.getColumnIndexOrThrow(COLUMN_ID))
-                val title = cursor.getString(cursor.getColumnIndexOrThrow(COLUMN_TITLE))
-                val content = cursor.getString(cursor.getColumnIndexOrThrow(COLUMN_CONTENT)) ?: ""
-                val timestamp = cursor.getString(cursor.getColumnIndexOrThrow(COLUMN_TIMESTAMP))
-
-                notesList.add(Note(id, title, content, timestamp))
-            } while (cursor.moveToNext())
+        db.rawQuery(query, null).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) add(Note(
+                    cursor.getLong(cursor.getColumnIndexOrThrow(COLUMN_ID)),
+                    cursor.getString(cursor.getColumnIndexOrThrow(COLUMN_TITLE)),
+                    cursor.getString(cursor.getColumnIndexOrThrow(COLUMN_CONTENT)) ?: "",
+                    cursor.getString(cursor.getColumnIndexOrThrow(COLUMN_TIMESTAMP))))
+            }
         }
-        cursor.close()
-        db.close()
-        return notesList
     }
 
-    fun getNoteById(id: Long): Note? {
-        val db = this.readableDatabase
-        val cursor = db.query(
+    fun getNoteById(id: Long): Note? = readableDatabase.use { db ->
+        db.query(
             TABLE_NOTES,
             arrayOf(COLUMN_ID, COLUMN_TITLE, COLUMN_CONTENT, COLUMN_TIMESTAMP),
             "$COLUMN_ID=?",
             arrayOf(id.toString()),
             null, null, null
-        )
-
-        var note: Note? = null
-        if (cursor.moveToFirst()) {
-            val title = cursor.getString(cursor.getColumnIndexOrThrow(COLUMN_TITLE))
-            val content = cursor.getString(cursor.getColumnIndexOrThrow(COLUMN_CONTENT)) ?: ""
-            val timestamp = cursor.getString(cursor.getColumnIndexOrThrow(COLUMN_TIMESTAMP))
-            note = Note(id, title, content, timestamp)
+        ).use { cursor ->
+            if (cursor.moveToFirst()) Note(id,
+                cursor.getString(cursor.getColumnIndexOrThrow(COLUMN_TITLE)),
+                cursor.getString(cursor.getColumnIndexOrThrow(COLUMN_CONTENT)) ?: "",
+                cursor.getString(cursor.getColumnIndexOrThrow(COLUMN_TIMESTAMP))) else null
         }
-        cursor.close()
-        db.close()
-        return note
     }
 
     fun updateNote(id: Long, title: String, content: String): Int {
         return writeTask { db ->
             val values = ContentValues().apply {
                 put(COLUMN_TITLE, title); put(COLUMN_CONTENT, content)
-                put(COLUMN_TIMESTAMP, nextNoteTimestamp(db))
+                put(COLUMN_TIMESTAMP, nextTimestamp(db, TABLE_NOTES, COLUMN_TIMESTAMP))
             }
             db.update(TABLE_NOTES, values, "$COLUMN_ID=?", arrayOf(id.toString()))
         }
+    }
+
+    fun appendNote(id: Long, entry: String): Boolean = writeTask { db ->
+        val current = db.rawQuery("SELECT $COLUMN_CONTENT FROM $TABLE_NOTES WHERE $COLUMN_ID = ?",
+            arrayOf(id.toString())).use { cursor ->
+            if (!cursor.moveToFirst()) return@writeTask false
+            cursor.getString(0).orEmpty()
+        }
+        val body = if (current.isEmpty()) "\n$entry" else "$current\n\n$entry"
+        val updated = db.update(TABLE_NOTES, ContentValues().apply {
+            put(COLUMN_CONTENT, body)
+            put(COLUMN_TIMESTAMP, nextTimestamp(db, TABLE_NOTES, COLUMN_TIMESTAMP))
+        }, "$COLUMN_ID = ?", arrayOf(id.toString()))
+        updated == 1
     }
 
     fun deleteNotes(noteIds: List<Long>): Int {
@@ -166,7 +165,7 @@ class DatabaseHelper(
             db.insertOrThrow("tasks", null, ContentValues().apply {
                 put("text", text)
                 put("completed", completed)
-                put("updated_at", nextTaskTimestamp(db))
+                put("updated_at", nextTimestamp(db, "tasks", "updated_at"))
             })
         }
     }
@@ -197,7 +196,7 @@ class DatabaseHelper(
         return writeTask { db ->
             db.update("tasks", ContentValues().apply {
                 put("text", text)
-                put("updated_at", nextTaskTimestamp(db))
+                put("updated_at", nextTimestamp(db, "tasks", "updated_at"))
             }, "id=?", arrayOf(id.toString()))
         }
     }
@@ -205,7 +204,7 @@ class DatabaseHelper(
     fun setTaskCompleted(id: Long, completed: Boolean): Int = writeTask { db ->
         db.update("tasks", ContentValues().apply {
             put("completed", completed)
-            put("updated_at", nextTaskTimestamp(db))
+            put("updated_at", nextTimestamp(db, "tasks", "updated_at"))
         }, "id=?", arrayOf(id.toString()))
     }
 
@@ -224,7 +223,7 @@ class DatabaseHelper(
             val values = ContentValues().apply {
                 put("text", draft.text)
                 put("completed", draft.completed)
-                put("updated_at", nextTaskTimestamp(db))
+                put("updated_at", nextTimestamp(db, "tasks", "updated_at"))
             }
             val taskId = draft.id ?: db.insertOrThrow("tasks", null, values)
             if (draft.id != null) check(db.update("tasks", values, "id=?",
@@ -243,17 +242,13 @@ class DatabaseHelper(
         } finally { db.endTransaction() }
     }
 
-    // Task-only logical milliseconds; existing second-precision rows remain sortable. Notes unchanged.
-    private fun nextTaskTimestamp(db: SQLiteDatabase): String = db.rawQuery("""
-        SELECT CASE WHEN max(updated_at) >= strftime('%Y-%m-%d %H:%M:%f', 'now', 'localtime')
-            THEN strftime('%Y-%m-%d %H:%M:%f', max(updated_at), '+0.001 seconds')
-            ELSE strftime('%Y-%m-%d %H:%M:%f', 'now', 'localtime') END FROM tasks
-    """.trimIndent(), null).use { it.moveToFirst(); checkNotNull(it.getString(0)) }
-
     // Locale-neutral logical milliseconds; never rewrite legacy rows.
-    private fun nextNoteTimestamp(db: SQLiteDatabase): String = db.rawQuery("""
-        SELECT CASE WHEN max(timestamp) >= strftime('%Y-%m-%d %H:%M:%f', 'now', 'localtime')
-            THEN strftime('%Y-%m-%d %H:%M:%f', max(timestamp), '+0.001 seconds')
-            ELSE strftime('%Y-%m-%d %H:%M:%f', 'now', 'localtime') END FROM notes
-    """.trimIndent(), null).use { it.moveToFirst(); checkNotNull(it.getString(0)) }
+    private fun nextTimestamp(db: SQLiteDatabase, table: String, column: String): String {
+        require((table == TABLE_NOTES && column == COLUMN_TIMESTAMP) || (table == "tasks" && column == "updated_at"))
+        return db.rawQuery("""
+            SELECT CASE WHEN max($column) >= strftime('%Y-%m-%d %H:%M:%f', 'now', 'localtime')
+                THEN strftime('%Y-%m-%d %H:%M:%f', max($column), '+0.001 seconds')
+                ELSE strftime('%Y-%m-%d %H:%M:%f', 'now', 'localtime') END FROM $table
+        """.trimIndent(), null).use { it.moveToFirst(); checkNotNull(it.getString(0)) }
+    }
 }

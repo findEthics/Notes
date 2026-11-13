@@ -28,8 +28,7 @@ internal object NotesDataEvents {
     fun changed() { Handler(Looper.getMainLooper()).post { listeners.forEach { it() } } }
 }
 
-private fun checkboxPrefixed(s: String): String =
-    if (s.startsWith("☐ ") || s.startsWith("☑ ")) s else "☐ $s"
+private fun checkboxPrefixed(text: String) = text.trim().let { s -> if (s.hasNoteCheckbox(0)) s else "☐ $s" }
 
 class NotesCaptureProvider : ContentProvider() {
     override fun onCreate() = true
@@ -71,7 +70,7 @@ class NotesCaptureProvider : ContentProvider() {
                 } }))
                 return result
             }
-            val text = extras?.getString("text")?.trim().orEmpty().take(10_000)
+            val text = extras?.getString("text")?.trim().orEmpty().takeCapture()
             if (text.isBlank()) return result
             when (method) {
                 "insert_task", "create_note" -> {
@@ -88,10 +87,7 @@ class NotesCaptureProvider : ContentProvider() {
                 "append_note" -> {
                     val id = extras?.getLong("id", -1L) ?: -1L
                     if (id <= 0) return result
-                    val note = db.getNoteById(id) ?: return result
-                    val entry = checkboxPrefixed(text)
-                    val content = if (note.content.isEmpty()) "\n$entry" else "${note.content}\n\n$entry"
-                    result.putBoolean("ok", db.updateNote(id, note.title, content) > 0)
+                    result.putBoolean("ok", db.appendNote(id, checkboxPrefixed(text)))
                 }
                 else -> throw UnsupportedOperationException(method)
             }

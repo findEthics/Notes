@@ -5,6 +5,8 @@
     <queries><package android:name="com.galaxyrio.gracelauncher" /></queries>
     <application
         android:allowBackup="true"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:enableOnBackInvokedCallback="true"
         android:icon="@mipmap/notes_launcher"
         android:label="@string/app_name"
@@ -14,6 +16,7 @@
         <provider android:name=".NotesCaptureProvider" android:authorities="com.example.notes.capture" android:exported="true" />
         <activity
             android:name=".MainActivity"
+            android:configChanges="keyboard|keyboardHidden"
             android:exported="true"
             android:launchMode="singleTask"
             android:windowSoftInputMode="adjustResize">

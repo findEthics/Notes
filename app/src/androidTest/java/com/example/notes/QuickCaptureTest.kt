@@ -204,6 +204,30 @@ class QuickCaptureTest {
         }
     }
 
+    @Test fun sameFrameCapturesSaveBothNotesBeforeReplacingTheirEditors() {
+        ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java)).use { scenario ->
+            ready("items")
+            scenario.onActivity { activity ->
+                activity.onNewIntent(intent(QuickCapture.NEW_NOTE, "First rapid capture\nFirst body"))
+                activity.onNewIntent(intent(QuickCapture.NEW_NOTE, "Second rapid capture\nSecond body"))
+            }
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithTag("note-text").fetchSemanticsNodes().any {
+                    it.config[SemanticsProperties.EditableText].text == "Second rapid capture\nSecond body"
+                }
+            }
+            val first = helper.getNotePreviews().filter { it.id !in originalNotes }
+                .single { it.title == "First rapid capture" }
+            assertEquals("First body", helper.getNoteById(first.id)!!.content)
+            compose.onNodeWithTag("done").performClick(); ready("items")
+            val captures = helper.getNotePreviews().filter { it.id !in originalNotes }
+            assertEquals(2, captures.size)
+            assertEquals(setOf("First rapid capture", "Second rapid capture"), captures.map { it.title }.toSet())
+            val second = captures.single { it.title == "Second rapid capture" }
+            assertEquals("Second body", helper.getNoteById(second.id)!!.content)
+        }
+    }
+
     @Test fun captureIgnoresNonStringExtrasAndExternalIdsAndBoundsPrefill() {
         val id = helper.insertNote("Never external ID", "Original")
         val malformed = intent(QuickCapture.NEW_NOTE).putExtra(Intent.EXTRA_TEXT, 42)

@@ -11,6 +11,10 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.util.concurrent.Callable
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /** Dedicated fixture emulator only; cleanup removes only this class's rows. */
 @RunWith(AndroidJUnit4::class)
@@ -131,5 +135,41 @@ class NotesCaptureProviderTest {
             assertTrue(result.getBoolean("ok"))
             assertEquals("Existing\n\n$entry", helper.getNoteById(id)!!.content)
         }
+    }
+
+    @Test fun concurrentAppendsPreserveEveryEntryAndTitle() {
+        val id = helper.insertNote("Concurrent capture", "Original").also { notes.add(it) }
+        val workers = Executors.newFixedThreadPool(8)
+        val start = CountDownLatch(1)
+        try {
+            val results = (1..32).map { index ->
+                workers.submit(Callable {
+                    check(start.await(10, TimeUnit.SECONDS))
+                    call("append_note", extras = Bundle().apply {
+                        putLong("id", id); putString("text", "Entry $index")
+                    }).getBoolean("ok")
+                })
+            }
+            start.countDown()
+            results.forEach { assertTrue(it.get(30, TimeUnit.SECONDS)) }
+            val note = requireNotNull(helper.getNoteById(id))
+            assertEquals("Concurrent capture", note.title)
+            val entries = note.content.split("\n\n")
+            assertEquals("Original", entries.first())
+            assertEquals(33, entries.size)
+            assertEquals((1..32).map { "☐ Entry $it" }.toSet(), entries.drop(1).toSet())
+        } finally {
+            workers.shutdownNow()
+            assertTrue(workers.awaitTermination(30, TimeUnit.SECONDS))
+        }
+    }
+
+    @Test fun appendRejectsMissingNoteWithoutCreatingOne() {
+        val id = helper.insertNote("Deleted append target").also { notes.add(it) }
+        helper.deleteNotes(listOf(id))
+        assertFalse(call("append_note", extras = Bundle().apply {
+            putLong("id", id); putString("text", "Must not create")
+        }).getBoolean("ok"))
+        assertNull(helper.getNoteById(id))
     }
 }
