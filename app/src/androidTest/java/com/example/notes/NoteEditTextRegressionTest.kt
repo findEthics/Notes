@@ -127,7 +127,11 @@ class NoteEditTextRegressionTest {
         val line = metrics.lineCount - 1
         val halfLine = (metrics.getLineBottom(line) - metrics.getLineTop(line)) / 2
         compose.onNodeWithTag("note-viewport").performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 100000f) }
-        compose.onNodeWithTag("note-viewport").performTouchInput { click(Offset(60f, height - halfLine)) }
+        val inputPosition = input().fetchSemanticsNode().positionInRoot
+        val viewportBounds = compose.onNodeWithTag("note-viewport").fetchSemanticsNode().boundsInRoot
+        compose.onNodeWithTag("note-viewport").performTouchInput {
+            click(Offset(60f, inputPosition.y - viewportBounds.top + metrics.getLineTop(line) + halfLine))
+        }
         input().assertTextContains("☑ scrolled", substring = true)
         assertEquals(1, strikeCount())
     }

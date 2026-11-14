@@ -142,8 +142,8 @@ class IconThemeAcceptanceTest {
             val footer = compose.onNodeWithTag("note-actions").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
             assertTrue("Note footer above IME", footer.bottom <= compose.onRoot().fetchSemanticsNode().boundsInRoot.bottom - ime(scenario) + 1)
             // Read post-animation geometry, not the viewport captured before the IME settled.
-            assertTrue("Viewport clears footer", compose.onNodeWithTag("note-viewport")
-                .fetchSemanticsNode().boundsInRoot.bottom <= footer.top + 1)
+            assertEquals("Viewport extends behind floating actions", footer.bottom, compose.onNodeWithTag("note-viewport")
+                .fetchSemanticsNode().boundsInRoot.bottom, 1f)
             shot("note-editor-ime-actions")
             compose.onNodeWithTag("font-picker").assertDoesNotExist()
             compose.onNodeWithTag("leave-input").assertDoesNotExist()

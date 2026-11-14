@@ -4,9 +4,13 @@ import android.view.KeyEvent
 
 enum class CreationShortcut { NOTE, TASK }
 
-enum class EditorAction { Close, Save, ToggleCheck, NewLineItem }
+enum class EditorAction { Close, Save, ToggleCheck, NextLineCheckbox, NewLineItem }
 
 enum class ListAction { SwitchSection, Delete, ToggleDone, CancelSelection, Undo }
+
+// Lock states are not held shortcut modifiers (unlike Shift, Sym or Function).
+internal fun shortcutModifiers(metaState: Int): Int = metaState and
+    (KeyEvent.META_CAPS_LOCK_ON or KeyEvent.META_NUM_LOCK_ON or KeyEvent.META_SCROLL_LOCK_ON).inv()
 
 fun listAction(key: Int, ctrl: Boolean, alt: Boolean, shift: Boolean, meta: Boolean,
     isKeyDown: Boolean, repeatCount: Int, textInputFocused: Boolean = false,
@@ -28,7 +32,7 @@ fun listAction(key: Int, ctrl: Boolean, alt: Boolean, shift: Boolean, meta: Bool
 fun KeyEvent.listAction(textInputFocused: Boolean): ListAction? {
     val allowed = KeyEvent.META_CTRL_MASK or KeyEvent.META_ALT_MASK or KeyEvent.META_SHIFT_MASK or KeyEvent.META_META_MASK
     return listAction(keyCode, isCtrlPressed, isAltPressed, isShiftPressed, isMetaPressed,
-        action == KeyEvent.ACTION_DOWN, repeatCount, textInputFocused, metaState and allowed.inv() != 0)
+        action == KeyEvent.ACTION_DOWN, repeatCount, textInputFocused, shortcutModifiers(metaState) and allowed.inv() != 0)
 }
 
 /** Exact modifiers, initial key down only; independent of editor state. */
@@ -42,13 +46,14 @@ fun editorAction(
         (key == KeyEvent.KEYCODE_ENTER || key == KeyEvent.KEYCODE_NUMPAD_ENTER) && !ctrl -> if (alt) EditorAction.Close else EditorAction.NewLineItem
         key == KeyEvent.KEYCODE_S && ctrl && !alt -> EditorAction.Save
         key == KeyEvent.KEYCODE_D && ctrl && !alt -> EditorAction.ToggleCheck
+        (key == KeyEvent.KEYCODE_I || key == KeyEvent.KEYCODE_O) && ctrl && !alt -> EditorAction.NextLineCheckbox
         else -> null
     }
 }
 
 fun KeyEvent.editorAction(): EditorAction? {
     val allowed = KeyEvent.META_CTRL_MASK or KeyEvent.META_ALT_MASK or KeyEvent.META_SHIFT_MASK or KeyEvent.META_META_MASK
-    if (metaState and allowed.inv() != 0) return null
+    if (shortcutModifiers(metaState) and allowed.inv() != 0) return null
     return editorAction(keyCode, isCtrlPressed, isAltPressed, isShiftPressed, isMetaPressed,
         action == KeyEvent.ACTION_DOWN, repeatCount)
 }
@@ -68,6 +73,6 @@ fun KeyEvent.creationShortcut(textInputFocused: Boolean): CreationShortcut? {
     return creationShortcut(
         when (keyCode) { KeyEvent.KEYCODE_N -> 'n'; KeyEvent.KEYCODE_T -> 't'; else -> '?' },
         action == KeyEvent.ACTION_DOWN && repeatCount == 0, isAltPressed, isShiftPressed,
-        isCtrlPressed, isMetaPressed, metaState and allowed.inv() != 0, textInputFocused
+        isCtrlPressed, isMetaPressed, shortcutModifiers(metaState) and allowed.inv() != 0, textInputFocused
     )
 }

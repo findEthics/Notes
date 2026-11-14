@@ -36,6 +36,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import com.example.notes.ui.*
 import kotlinx.coroutines.launch
 
@@ -118,11 +119,13 @@ internal class NoteScreen(
                     contentWindowInsets = WindowInsets.safeDrawing.union(WindowInsets.ime),
                     ) { padding ->
                          BoxWithConstraints(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).testTag("note-content")) {
-                         val compactActions = maxHeight < 220.dp
-                        Column(Modifier.fillMaxSize()) {
-                            Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).testTag("note-viewport")) {
+                            val compactActions = maxHeight < 220.dp
+                            val scroll = rememberScrollState()
+                            val clearance = (if (compactActions) 56.dp else 124.dp) + actionBottomPadding + 12.dp
+                            Column(Modifier.fillMaxSize().verticalScroll(scroll).testTag("note-viewport")
+                                .padding(bottom = clearance)) {
                                 error?.let { ErrorNotice(it) { if (ready) saveNote() else loadNote() } }
-                                if (ready) NoteInput(draft, Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                                if (ready) NoteInput(draft, clearance, Modifier.fillMaxWidth().padding(horizontal = 16.dp)
                                     .focusRequester(input).focusRing().onFocusChanged { inputFocused = it.isFocused }
                                     .onPreviewKeyEvent {
                                         val event = it.nativeKeyEvent
@@ -133,7 +136,10 @@ internal class NoteScreen(
                                         } else false
                                     })
                             }
-                                Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).testTag("note-actions")
+                                ForwardScrollIndicator(scroll.canScrollForward,
+                                    if (scroll.maxValue > 0) scroll.value.toFloat() / scroll.maxValue else 0f,
+                                    Modifier.matchParentSize())
+                                Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth().heightIn(min = 56.dp).testTag("note-actions")
                                     .padding(start = 20.dp, end = 20.dp, bottom = actionBottomPadding),
                                      verticalAlignment = Alignment.Bottom,
                                      horizontalArrangement = Arrangement.SpaceBetween) {
@@ -143,26 +149,23 @@ internal class NoteScreen(
                                              contentColor = MaterialTheme.colorScheme.onSecondaryContainer) {
                                              Icon(painterResource(R.drawable.ic_check_box), contentDescription = stringResource(R.string.insert_checkbox))
                                           }
-                                          // Only float Share when the full stack would crowd the IME viewport.
-                                          Column(Modifier.height(if (compactActions) 56.dp else 124.dp)
-                                              .wrapContentHeight(Alignment.Bottom, unbounded = true),
-                                              horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                           Box(Modifier.width(if (compactActions) 124.dp else 56.dp)
+                                               .height(if (compactActions) 56.dp else 124.dp)) {
                                               FloatingActionButton(onClick = ::shareNote,
-                                                  modifier = Modifier.focusRing().testTag("share-note"),
+                                                   modifier = Modifier.align(Alignment.TopStart).focusRing().testTag("share-note"),
                                                   containerColor = MaterialTheme.colorScheme.secondaryContainer,
                                                   contentColor = MaterialTheme.colorScheme.onSecondaryContainer) {
                                                   Icon(painterResource(R.drawable.ic_share), contentDescription = stringResource(R.string.share_note))
                                               }
                                               FloatingActionButton(onClick = { if (ready && saveNote()) finish() },
-                                                  modifier = Modifier.focusRequester(controls).focusRing().testTag("done"),
+                                                   modifier = Modifier.align(Alignment.BottomEnd).focusRequester(controls).focusRing().testTag("done"),
                                                   containerColor = MaterialTheme.colorScheme.primaryContainer,
                                                   contentColor = MaterialTheme.colorScheme.onPrimaryContainer) {
-                                                  Icon(Icons.Default.Check, contentDescription = stringResource(R.string.done))
-                                              }
-                                          }
-                                  }
+                                                   Icon(Icons.Default.Check, contentDescription = stringResource(R.string.done))
+                                               }
+                                           }
+                                   }
                          }
-                        }
                 }
                 // One request per destination/input lifetime, after the window can accept input.
                 var initialFocusRequested by remember { mutableStateOf(false) }
@@ -243,9 +246,9 @@ internal class NoteScreen(
     }
     override fun handleShortcut(event: KeyEvent): Boolean {
         if (ready && !settingsOpen) when (event.editorAction()) {
-            EditorAction.Close -> { if (saveNote()) finish(); return true }
-            EditorAction.Save -> { saveNote(); return true }
+            EditorAction.Close, EditorAction.Save -> { if (saveNote()) finish(); return true }
             EditorAction.ToggleCheck -> if (inputFocused) { draft.editNote { insertNoteCheckbox(it, toggle = true) }; return true }
+            EditorAction.NextLineCheckbox -> if (inputFocused) { draft.editNote(::insertNextLineCheckbox); return true }
             EditorAction.NewLineItem -> if (inputFocused) { draft.editNote { noteChecklistEnter(it) ?: notePlainNewline(it) }; return true }
             else -> Unit
         }
@@ -283,13 +286,15 @@ internal class NoteScreen(
 }
 
 @Composable
-private fun NoteInput(value: TextFieldState, modifier: Modifier) {
+private fun NoteInput(value: TextFieldState, clearance: Dp, modifier: Modifier) {
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
     val caret = remember { BringIntoViewRequester() }
     var focused by remember { mutableStateOf(false) }
-    LaunchedEffect(value.selection, layout, focused) {
-        if (focused) layout?.takeIf { it.layoutInput.text.text == value.text.toString() }
-            ?.let { caret.bringIntoView(it.getCursorRect(value.selection.end)) }
+    val clearancePx = with(LocalDensity.current) { clearance.toPx() }
+    val cursor = layout?.takeIf { it.layoutInput.text.text == value.text.toString() }
+        ?.getCursorRect(value.selection.end)
+    LaunchedEffect(cursor, focused, clearancePx) {
+        if (focused && cursor != null) caret.bringIntoView(cursor.copy(bottom = cursor.bottom + clearancePx))
     }
     val config = LocalViewConfiguration.current
     val label = stringResource(R.string.note_text)

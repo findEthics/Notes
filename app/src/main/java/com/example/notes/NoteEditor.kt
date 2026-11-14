@@ -94,6 +94,11 @@ fun noteChecklistEnter(value: EditorText, shift: Boolean = false): EditorText? {
     else value.copy(text = value.text.replaceRange(caret, caret, "\n☐ "), selection = TextRange(caret + 3))
 }
 
+fun insertNextLineCheckbox(value: EditorText): EditorText {
+    val end = value.text.indexOf('\n', value.selection.end).let { if (it < 0) value.text.length else it }
+    return EditorText(value.text.replaceRange(end, end, "\n☐ "), TextRange(end + 3))
+}
+
 fun noteChecklistBackspace(value: EditorText): EditorText? {
     if (!value.selection.collapsed) return null
     val start = noteLineStart(value)

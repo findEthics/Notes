@@ -9,6 +9,17 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class NoteEditorTest {
+    @Test fun nextLineCheckboxPreservesCurrentAndFollowingLines() {
+        for (caret in listOf(0, 2, 5)) {
+            assertEquals(EditorText("Title\n☐ \nBody", TextRange(8)),
+                insertNextLineCheckbox(EditorText("Title\nBody", TextRange(caret))))
+        }
+        assertEquals(EditorText("Title\n☐ ", TextRange(8)),
+            insertNextLineCheckbox(EditorText("Title", TextRange(5))))
+        assertEquals(EditorText("\n☐ ", TextRange(3)), insertNextLineCheckbox(EditorText()))
+        assertEquals(EditorText("Title\n\n☐ ", TextRange(9)),
+            insertNextLineCheckbox(EditorText("Title\n", TextRange(6))))
+    }
     @Test fun plainTextRoundtripAndStyle() {
         assertEquals("" to "body\nsecond", splitNote("\n body\nsecond \n"))
         assertEquals("Title" to "body", splitNote(" Title \n body "))

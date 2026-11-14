@@ -284,7 +284,10 @@ class MainActivity : ComponentActivity() {
                     val visibleTasks = tasks.filterNot { pending?.section == Section.TASKS && it.task.id in pending.ids }
                     val keys = if (displayedSection == Section.NOTES) visibleNotes.map { "note-${it.id}" }
                         else visibleTasks.map { "task-${it.task.id}" }
-                     val scroll = if (displayedSection == Section.NOTES) noteScroll else taskScroll
+                      val scroll = if (displayedSection == Section.NOTES) noteScroll else taskScroll
+                      val scrollProgress by remember(scroll) { derivedStateOf {
+                          scroll.firstVisibleItemIndex.toFloat() / (scroll.layoutInfo.totalItemsCount - 1).coerceAtLeast(1)
+                      } }
                       val editingId = inlineTask?.editingTaskId
                       LaunchedEffect(active, editingId, loading) {
                           // Scaffold subcomposition can still be measuring when this effect starts.
@@ -311,13 +314,15 @@ class MainActivity : ComponentActivity() {
                             requesters[target]?.requestFocus()
                         }
                     }
+                    Box(Modifier.fillMaxSize()) {
                     LazyColumn(Modifier.fillMaxSize().consumeWindowInsets(padding).testTag(if (active || preview) "items" else "outgoing-items"),
                         state = scroll,
                         contentPadding = PaddingValues(start = padding.calculateLeftPadding(androidx.compose.ui.unit.LayoutDirection.Ltr) + 16.dp,
                             end = padding.calculateRightPadding(androidx.compose.ui.unit.LayoutDirection.Ltr) + 64.dp,
                             top = padding.calculateTopPadding() + 8.dp,
                             // The IME already reduces the viewport; don't reserve FAB space below the composer too.
-                            bottom = padding.calculateBottomPadding() + if (inlineTask != null) 8.dp else 88.dp)) {
+                             bottom = padding.calculateBottomPadding() + if (inlineTask != null) 8.dp
+                                 else if (displayedSection == Section.TASKS && checkedTaskIds.isNotEmpty()) 156.dp else 88.dp)) {
                         error?.let { message -> item { ErrorNotice(message) { load() } } }
                         if (loading) item { LinearProgressIndicator(Modifier.fillMaxWidth().testTag("loading")) }
                         if (displayedSection == Section.NOTES) {
@@ -380,15 +385,20 @@ class MainActivity : ComponentActivity() {
                                             style = taskLabelStyle(summary.task.completed), maxLines = 3, overflow = TextOverflow.Ellipsis)
                                     }
                                 }
-                                   HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                                 }
-                                 }
+                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                                  }
+                             }
+                         }
                      }
-                    }
-                        }
-                    }
-                }
-                TopRightFontSettings { settingsOpen = true }
+                     }
+                     if (active || preview) ForwardScrollIndicator(scroll.canScrollForward,
+                             scrollProgress,
+                             Modifier.matchParentSize().padding(top = padding.calculateTopPadding(),
+                                 bottom = padding.calculateBottomPadding()))
+                     }
+                         }
+                     }
+                 TopRightFontSettings { settingsOpen = true }
                 }
                 if (settingsOpen && !preview) FontSettingsDialog(settings, onKeyboardShortcuts = {
                     settingsOpen = false; requestShowKeyboardShortcuts()

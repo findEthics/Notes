@@ -101,7 +101,7 @@ class NoteEditorIntegrationTest {
             assertTrue("Input reclaims header height", input.top <= viewport.top + 1)
             assertTrue("Usable bounded viewport", viewport.height >= 48 * density)
             val footer = compose.onNodeWithTag("note-actions").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
-            assertTrue("Viewport clears fixed footer", viewport.bottom <= footer.top + 1)
+            assertEquals("Text viewport extends behind actions", viewport.bottom, footer.bottom, 1f)
             assertTrue("Footer stays above IME", footer.bottom <= root.bottom - ime(scenario) + 1)
             for (tag in listOf("font-picker", "leave-input")) compose.onNodeWithTag(tag).assertDoesNotExist()
             for (tag in listOf("insert-checkbox", "share-note", "done")) {
@@ -110,17 +110,22 @@ class NoteEditorIntegrationTest {
             val share = compose.onNodeWithTag("share-note").assertContentDescriptionEquals("Share note").fetchSemanticsNode().boundsInRoot
             val done = compose.onNodeWithTag("done").assertContentDescriptionEquals("Done").fetchSemanticsNode().boundsInRoot
             val checkbox = compose.onNodeWithTag("insert-checkbox").fetchSemanticsNode().boundsInRoot
-            assertTrue("Share stays above Done", share.bottom <= done.top)
-            assertEquals("Right-side actions align", done.right, share.right, 1f)
+            val content = compose.onNodeWithTag("note-content").fetchSemanticsNode().boundsInRoot
+            if (content.height >= 220f * density) {
+                assertTrue("Share stays above Done", share.bottom <= done.top)
+                assertEquals("Right-side actions align", done.right, share.right, 1f)
+            } else {
+                assertEquals("Compact actions stay level", done.bottom, share.bottom, 1f)
+                assertTrue("Compact actions stay separate", share.right <= done.left)
+            }
             assertEquals("Checkbox stays bottom-left", done.bottom, checkbox.bottom, 1f)
             assertEquals("Checkbox corner-safe gutter", 20f * density, checkbox.left - footer.left, 1f)
             assertEquals("Done corner-safe gutter", 20f * density, footer.right - done.right, 1f)
             assertEquals("IME action clearance", 8f * density, footer.bottom - done.bottom, 1f)
              assertTrue("Done stays inside footer", done.top >= footer.top && done.bottom <= footer.bottom)
-             val content = compose.onNodeWithTag("note-content").fetchSemanticsNode().boundsInRoot
-             if (content.height >= 220f * density) {
+              if (content.height >= 220f * density) {
                  assertTrue("Share stays inside roomy footer", share.top >= footer.top)
-                 assertTrue("Roomy editor clears Share", viewport.bottom <= share.top)
+                  assertTrue("Roomy editor extends behind Share", viewport.bottom > share.bottom)
              }
              println("NOTE_VIEWPORT fontScale=${context.resources.configuration.fontScale} heightDp=${viewport.height / density} footerDp=${footer.height / density} contentDp=${content.height / density} imeDp=${ime(scenario) / density}")
             assertTrue("Left and right actions stay separate", checkbox.right <= done.left)
@@ -148,7 +153,7 @@ class NoteEditorIntegrationTest {
              val hiddenShare = compose.onNodeWithTag("share-note").fetchSemanticsNode().boundsInRoot
              val hiddenViewport = compose.onNodeWithTag("note-viewport").fetchSemanticsNode().boundsInRoot
              assertTrue("Hidden IME Share stays inside footer", hiddenShare.top >= hiddenFooter.top)
-             assertTrue("Hidden IME editor clears Share", hiddenViewport.bottom <= hiddenShare.top)
+              assertEquals("Hidden IME text fills content", hiddenViewport.bottom, hiddenFooter.bottom, 1f)
             assertTrue("Hidden IME leaves physical corner clearance", hiddenFooter.bottom - hiddenDone.bottom >= 16f * density - 1)
             assertEquals("Hidden IME actions stay level", hiddenDone.bottom, hiddenCheckbox.bottom, 1f)
             assertTrue("Hidden IME Done stays inside footer", hiddenDone.top >= hiddenFooter.top && hiddenDone.bottom <= hiddenFooter.bottom)
@@ -216,7 +221,8 @@ class NoteEditorIntegrationTest {
             val cursor = layout().getCursorRect(raw.length)
             val viewport = compose.onNodeWithTag("note-viewport").fetchSemanticsNode().boundsInRoot
             node.positionInRoot.y + cursor.top >= viewport.top - 1 &&
-                node.positionInRoot.y + cursor.bottom <= viewport.bottom + 1
+                 node.positionInRoot.y + cursor.bottom <=
+                     compose.onNodeWithTag("note-actions").fetchSemanticsNode().boundsInRoot.top + 1
         }
         screenshot("long-draft-caret.png")
         text().assertTextEquals(raw)
@@ -311,6 +317,58 @@ class NoteEditorIntegrationTest {
             }
         } finally { mode.setApplicationNightMode(UiModeManager.MODE_NIGHT_AUTO); FontSettings(context).use { it.select(old) } }
     }
+    @Test fun nextLineCheckboxShortcutsKeepFocusAndCtrlSSavesAndCloses() = editor("Title", "Body") { _, id ->
+        loaded()
+        for (code in listOf(KeyEvent.KEYCODE_I, KeyEvent.KEYCODE_O)) {
+            text().performTextReplacement("Title\nBody")
+            text().performSemanticsAction(SemanticsActions.SetSelection) { it(2, 2, false) }
+            key(code, KeyEvent.META_CTRL_ON)
+            text().assertIsFocused().assertTextEquals("Title\n☐ \nBody")
+            assertEquals(TextRange(8), text().fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+        }
+        key(KeyEvent.KEYCODE_S, KeyEvent.META_CTRL_ON)
+        compose.waitUntil(5000) { compose.onAllNodesWithTag("items").fetchSemanticsNodes().isNotEmpty() }
+        text().assertDoesNotExist()
+        assertEquals("☐ \nBody", helper.getNoteById(id)!!.content)
+    }
+
+    @Test fun lockStatesDoNotDisableNativeKeyboardShortcuts() {
+        val locks = listOf(KeyEvent.META_CAPS_LOCK_ON, KeyEvent.META_NUM_LOCK_ON,
+            KeyEvent.META_SCROLL_LOCK_ON, KeyEvent.META_CAPS_LOCK_ON or
+                KeyEvent.META_NUM_LOCK_ON or KeyEvent.META_SCROLL_LOCK_ON)
+        for (lock in locks) editor("Title", "Body") { _, id ->
+            loaded()
+            val ctrl = KeyEvent.META_CTRL_ON or KeyEvent.META_CTRL_LEFT_ON or lock
+            for (code in listOf(KeyEvent.KEYCODE_I, KeyEvent.KEYCODE_O)) {
+                text().performTextReplacement("Title\nBody")
+                text().performSemanticsAction(SemanticsActions.SetSelection) { it(2, 2, false) }
+                key(code, ctrl)
+                text().assertIsFocused().assertTextEquals("Title\n☐ \nBody")
+            }
+            assertEquals(CreationShortcut.NOTE, KeyEvent(0, 0, KeyEvent.ACTION_DOWN,
+                KeyEvent.KEYCODE_N, 0, KeyEvent.META_ALT_ON or lock).creationShortcut(false))
+            assertEquals(ListAction.ToggleDone, KeyEvent(0, 0, KeyEvent.ACTION_DOWN,
+                KeyEvent.KEYCODE_D, 0, ctrl).listAction(false))
+            assertNull(KeyEvent(0, 0, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_I, 0,
+                ctrl or KeyEvent.META_SHIFT_ON).editorAction())
+            key(KeyEvent.KEYCODE_S, ctrl)
+            compose.waitUntil(5000) { compose.onAllNodesWithTag("items").fetchSemanticsNodes().isNotEmpty() }
+            text().assertDoesNotExist()
+            assertEquals("☐ \nBody", helper.getNoteById(id)!!.content)
+        }
+    }
+
+    @Test fun editorScrollHintOnlyAppearsWithContentBelow() = editor("Short", "") { scenario, _ ->
+        loaded(); hideIme(scenario)
+        compose.onNodeWithTag("scroll-more").assertDoesNotExist()
+        text().performTextReplacement("Title\n" + "line\n".repeat(80))
+        text().performSemanticsAction(SemanticsActions.SetSelection) { it(0, 0, false) }
+        compose.onNodeWithTag("note-viewport").performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, -100000f) }
+        compose.onNodeWithTag("scroll-more").assertExists()
+        compose.onNodeWithTag("note-viewport").performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 100000f) }
+        compose.onNodeWithTag("scroll-more").assertDoesNotExist()
+    }
+
     @Test fun doneSavesWithoutEditorNavigationChrome() = editor("Navigation", "Before") { scenario, id ->
         loaded(); text().performTextReplacement("Navigation\nSaved before Done")
         compose.onNodeWithTag("section-panel").assertDoesNotExist()
@@ -469,14 +527,11 @@ class NoteEditorIntegrationTest {
         undo(); text().assertTextEquals("☐ task\n☐ ")
     }
 
-    @Test fun ctrlSaveStaysAndEscapeOrAltEnterClosesWithSavedText() {
-        for (close in listOf(KeyEvent.KEYCODE_ESCAPE to 0, KeyEvent.KEYCODE_ENTER to KeyEvent.META_ALT_ON)) {
+    @Test fun ctrlSaveEscapeAndAltEnterCloseWithSavedText() {
+        for (close in listOf(KeyEvent.KEYCODE_S to KeyEvent.META_CTRL_ON,
+            KeyEvent.KEYCODE_ESCAPE to 0, KeyEvent.KEYCODE_ENTER to KeyEvent.META_ALT_ON)) {
             editor("Original", "body") { scenario, id ->
                 loaded(); text().performTextReplacement("Saved\nctrl")
-                key(KeyEvent.KEYCODE_S, KeyEvent.META_CTRL_ON)
-                assertEquals(androidx.lifecycle.Lifecycle.State.RESUMED, scenario.state)
-                text().assertIsFocused()
-                assertEquals("ctrl", helper.getNoteById(id)!!.content)
                 text().performTextReplacement("Saved\nclosed")
                 key(close.first, close.second)
                 compose.waitUntil(5000) { compose.onAllNodesWithTag("items").fetchSemanticsNodes().isNotEmpty() }
