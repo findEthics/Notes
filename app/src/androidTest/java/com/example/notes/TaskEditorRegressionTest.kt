@@ -47,6 +47,26 @@ class TaskEditorRegressionTest {
         compose.waitForIdle()
     }
 
+    @Test fun noteCheckboxShortcutsAreConsumedWithoutChangingTodoTextOrCompletion() {
+        val id = helper.insertTask("unchanged to-do")!!; ids.add(id)
+        launchTask(id).use { scenario ->
+            loaded()
+            compose.onNodeWithTag("task-text").performClick().assertIsFocused()
+            for (code in listOf(KeyEvent.KEYCODE_Q, KeyEvent.KEYCODE_I, KeyEvent.KEYCODE_O)) {
+                scenario.onActivity {
+                    assertTrue(it.currentEditor!!.handleShortcut(KeyEvent(0, 0, KeyEvent.ACTION_DOWN,
+                        code, 0, KeyEvent.META_CTRL_ON)))
+                }
+                key(code, KeyEvent.META_CTRL_ON)
+                compose.onNodeWithTag("task-text").assertIsFocused().assertTextEquals("unchanged to-do")
+                compose.onNodeWithTag("parent-completed").assertIsOff()
+            }
+            compose.onNodeWithTag("done").performClick()
+        }
+        assertEquals("unchanged to-do", helper.getTaskById(id)!!.text)
+        assertFalse(helper.getTaskById(id)!!.completed)
+    }
+
     @Test fun doneBackgroundBackAndRecreationRetainIdAndEdits() {
         val text = "task-${UUID.randomUUID()}"
         launchTask().use { scenario ->

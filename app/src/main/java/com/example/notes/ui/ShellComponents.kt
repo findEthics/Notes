@@ -9,6 +9,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -61,14 +62,28 @@ fun BottomSectionPanel(section: Section, onSection: (Section) -> Unit) {
 }
 
 @Composable
-fun FontSettingsDialog(settings: FontSettings, onKeyboardShortcuts: (() -> Unit)? = null, onDismiss: () -> Unit) {
+fun FontSettingsDialog(settings: FontSettings, onDismiss: () -> Unit) {
+    var shortcutsOpen by remember { mutableStateOf(false) }
+    if (shortcutsOpen) {
+        KeyboardShortcutsDialog { shortcutsOpen = false }
+        return
+    }
     AlertDialog(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         shape = MaterialTheme.shapes.extraLarge, title = { Text(stringResource(R.string.font_settings)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                if (onKeyboardShortcuts != null) TextButton(onClick = onKeyboardShortcuts,
+                TextButton(onClick = { shortcutsOpen = true },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).focusRing().testTag("keyboard-shortcuts")) {
                     Text("Keyboard shortcuts")
+                }
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).focusRing()
+                    .testTag("show-checkbox-toggle")
+                    .toggleable(settings.showCheckboxButton, role = Role.Switch,
+                        onValueChange = settings::setShowCheckboxButton).padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text("Show checkbox button", Modifier.weight(1f).padding(end = 12.dp),
+                        style = MaterialTheme.typography.labelLarge)
+                    Switch(checked = settings.showCheckboxButton, onCheckedChange = null)
                 }
                 FontChoice.entries.forEach { choice ->
                     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).focusRing()
@@ -84,6 +99,47 @@ fun FontSettingsDialog(settings: FontSettings, onKeyboardShortcuts: (() -> Unit)
         }, confirmButton = { TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp).focusRing()) {
             Text(stringResource(R.string.done))
         } })
+}
+
+@Composable
+fun KeyboardShortcutsDialog(onDismiss: () -> Unit) {
+    AlertDialog(onDismissRequest = onDismiss, modifier = Modifier.testTag("shortcuts-dialog"),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = MaterialTheme.shapes.extraLarge, title = { Text("Keyboard Shortcuts") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Anywhere (outside text fields)", style = MaterialTheme.typography.titleMedium)
+                Text("Alt+N / Shift+N: New note (Alt+N creates a to-do in the To-dos list)\n" +
+                    "Alt+T / Shift+T: New to-do")
+                Text("Lists (Notes & To-dos)", style = MaterialTheme.typography.titleMedium)
+                Text("Shift+Space / Alt+Space: Switch between Notes and To-dos\n" +
+                    "↑ / ↓ / Tab / Shift+Tab: Move focus between items\n" +
+                    "Enter: Open focused note or to-do\n" +
+                    "Ctrl+D: Toggle focused to-do done\n" +
+                    "Delete / Backspace: Delete focused item or selection\n" +
+                    "Ctrl+Z: Undo delete\n" +
+                    "Escape: Cancel selection")
+                Text("Note Editor", style = MaterialTheme.typography.titleMedium)
+                Text("Ctrl+Q: Insert checkbox (☐ ) at start of current line\n" +
+                    "Ctrl+I / Ctrl+O: Insert new checkbox line below current line\n" +
+                    "Ctrl+D: Toggle checkbox on current line (or insert if none)\n" +
+                    "Enter: Continue checklist on next line (or exit empty checkbox)\n" +
+                    "Shift+Enter: Insert plain newline\n" +
+                    "Backspace (on empty ☐ ): Remove checkbox\n" +
+                    "Tab / Shift+Tab: Move focus between editor and controls\n" +
+                    "Ctrl+S / Alt+Enter / Escape: Save and close note")
+                Text("To-do Editor", style = MaterialTheme.typography.titleMedium)
+                Text("Enter: Save and add another to-do\n" +
+                    "Shift+Enter: Insert newline in to-do\n" +
+                    "Ctrl+D: Toggle completed status\n" +
+                    "Ctrl+S: Save to-do\n" +
+                    "Alt+Enter / Escape: Save and close")
+            }
+        }, confirmButton = {
+            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp).focusRing().testTag("shortcuts-done")) {
+                Text(stringResource(R.string.done))
+            }
+        })
 }
 
 @Composable

@@ -4,7 +4,7 @@ import android.view.KeyEvent
 
 enum class CreationShortcut { NOTE, TASK }
 
-enum class EditorAction { Close, Save, ToggleCheck, NextLineCheckbox, NewLineItem }
+enum class EditorAction { Close, Save, ToggleCheck, InsertCheckbox, NextLineCheckbox, NewLineItem }
 
 enum class ListAction { SwitchSection, Delete, ToggleDone, CancelSelection, Undo }
 
@@ -46,6 +46,7 @@ fun editorAction(
         (key == KeyEvent.KEYCODE_ENTER || key == KeyEvent.KEYCODE_NUMPAD_ENTER) && !ctrl -> if (alt) EditorAction.Close else EditorAction.NewLineItem
         key == KeyEvent.KEYCODE_S && ctrl && !alt -> EditorAction.Save
         key == KeyEvent.KEYCODE_D && ctrl && !alt -> EditorAction.ToggleCheck
+        key == KeyEvent.KEYCODE_Q && ctrl && !alt -> EditorAction.InsertCheckbox
         (key == KeyEvent.KEYCODE_I || key == KeyEvent.KEYCODE_O) && ctrl && !alt -> EditorAction.NextLineCheckbox
         else -> null
     }

@@ -30,7 +30,7 @@ class KeyboardShortcutsTest {
                 }
     }
     @Test fun editorActionsRequireExactModifiersInitialDownAndNoRepeats() {
-        for (key in listOf(111, 66, 160, 47, 32, 37, 43, 42)) for (mask in 0..15)
+        for (key in listOf(111, 66, 160, 47, 32, 45, 37, 43, 42)) for (mask in 0..15)
             for (down in listOf(false, true)) for (repeat in 0..1) {
                 val ctrl = mask and 1 != 0; val alt = mask and 2 != 0
                 val shift = mask and 4 != 0; val meta = mask and 8 != 0
@@ -40,6 +40,7 @@ class KeyboardShortcutsTest {
                     (key == 66 || key == 160) && mask == 0 -> EditorAction.NewLineItem
                     key == 47 && mask == 1 -> EditorAction.Save
                     key == 32 && mask == 1 -> EditorAction.ToggleCheck
+                    key == 45 && mask == 1 -> EditorAction.InsertCheckbox
                     (key == 37 || key == 43) && mask == 1 -> EditorAction.NextLineCheckbox
                     else -> null
                 }

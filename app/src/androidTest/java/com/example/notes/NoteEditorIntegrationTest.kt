@@ -317,6 +317,70 @@ class NoteEditorIntegrationTest {
             }
         } finally { mode.setApplicationNightMode(UiModeManager.MODE_NIGHT_AUTO); FontSettings(context).use { it.select(old) } }
     }
+    @Test fun settingsOpensAppShortcutGuideAndOsHelperIncludesCheckboxShortcuts() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            compose.waitUntil(10000) { compose.onAllNodesWithTag("settings").fetchSemanticsNodes().isNotEmpty() }
+            scenario.onActivity { activity ->
+                val groups = mutableListOf<android.view.KeyboardShortcutGroup>()
+                activity.onProvideKeyboardShortcuts(groups, null, -1)
+                assertTrue(groups.all { it.label.toString().startsWith("Notes · ") })
+                val noteShortcuts = groups.single { it.label == "Notes · Note editor" }.items
+                for (code in listOf(KeyEvent.KEYCODE_Q, KeyEvent.KEYCODE_I, KeyEvent.KEYCODE_O)) {
+                    assertEquals(1, noteShortcuts.count { it.keycode == code && it.modifiers == KeyEvent.META_CTRL_ON })
+                }
+            }
+            compose.onNodeWithTag("settings").performClick()
+            compose.onNodeWithTag("keyboard-shortcuts").performScrollTo().performClick()
+            compose.onNodeWithTag("shortcuts-dialog").assertIsDisplayed()
+            compose.onNodeWithText("Ctrl+Q:", substring = true).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("shortcuts-done").performClick()
+            compose.onNodeWithTag("shortcuts-dialog").assertDoesNotExist()
+            compose.onNodeWithTag("keyboard-shortcuts").assertExists()
+        }
+    }
+
+    @Test fun checkboxVisibilityPersistsKeepsDoneRightAlignedAndCtrlQWorksWithEitherSetting() {
+        val old = FontSettings(context).use { it.showCheckboxButton }
+        val id = helper.insertNote("Checkbox preference", "Body"); ids.add(id)
+        try {
+            instrumentation.runOnMainSync { FontSettings(context).use { it.setShowCheckboxButton(true) } }
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                for (show in listOf(false, true)) {
+                    compose.waitUntil(10000) { compose.onAllNodesWithTag("settings").fetchSemanticsNodes().isNotEmpty() }
+                    compose.onNodeWithTag("settings").performClick()
+                    compose.onNodeWithTag("show-checkbox-toggle").performScrollTo().performClick()
+                    if (show) compose.onNodeWithTag("show-checkbox-toggle").assertIsOn()
+                    else compose.onNodeWithTag("show-checkbox-toggle").assertIsOff()
+                    assertEquals(show, FontSettings(context).use { it.showCheckboxButton })
+                    compose.onNode(hasText("Done") and hasAnyAncestor(isDialog())).performClick()
+                    compose.onNodeWithTag("items").performScrollToKey("note-$id")
+                    compose.onNodeWithTag("note-$id").performClick()
+                    loaded()
+                    scenario.recreate(); loaded()
+                    compose.waitUntil(10000) { text().fetchSemanticsNode().config[SemanticsProperties.Focused] && ime(scenario) > 0 }
+                    if (show) compose.onNodeWithTag("insert-checkbox").assertIsDisplayed()
+                    else compose.onNodeWithTag("insert-checkbox").assertDoesNotExist()
+                    val footer = compose.onNodeWithTag("note-actions").fetchSemanticsNode().boundsInRoot
+                    val done = compose.onNodeWithTag("done").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+                    assertEquals("Done stays right-aligned", 20f * context.resources.displayMetrics.density,
+                        footer.right - done.right, 1f)
+                    text().performTextReplacement("Title\nBody\nTail")
+                    text().performSemanticsAction(SemanticsActions.SetSelection) { it(8, 8, false) }
+                    key(KeyEvent.KEYCODE_Q, KeyEvent.META_CTRL_ON)
+                    text().assertIsFocused().assertTextEquals("Title\n☐ Body\nTail")
+                    key(KeyEvent.KEYCODE_Q, KeyEvent.META_CTRL_ON)
+                    text().assertTextEquals("Title\n☐ Body\nTail")
+                    focusDone()
+                    key(KeyEvent.KEYCODE_Q, KeyEvent.META_CTRL_ON)
+                    text().assertTextEquals("Title\n☐ Body\nTail")
+                    compose.onNodeWithTag("done").performClick()
+                }
+            }
+        } finally {
+            instrumentation.runOnMainSync { FontSettings(context).use { it.setShowCheckboxButton(old) } }
+        }
+    }
+
     @Test fun nextLineCheckboxShortcutsKeepFocusAndCtrlSSavesAndCloses() = editor("Title", "Body") { _, id ->
         loaded()
         for (code in listOf(KeyEvent.KEYCODE_I, KeyEvent.KEYCODE_O)) {

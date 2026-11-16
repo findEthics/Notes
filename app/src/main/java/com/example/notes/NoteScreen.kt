@@ -142,8 +142,8 @@ internal class NoteScreen(
                                 Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth().heightIn(min = 56.dp).testTag("note-actions")
                                     .padding(start = 20.dp, end = 20.dp, bottom = actionBottomPadding),
                                      verticalAlignment = Alignment.Bottom,
-                                     horizontalArrangement = Arrangement.SpaceBetween) {
-                                         FloatingActionButton(onClick = { if (ready) { draft.editNote { insertNoteCheckbox(it) }; input.requestFocus(); keyboard?.show() } },
+                                      horizontalArrangement = if (settings.showCheckboxButton) Arrangement.SpaceBetween else Arrangement.End) {
+                                          if (settings.showCheckboxButton) FloatingActionButton(onClick = { if (ready) { draft.editNote { insertNoteCheckbox(it) }; input.requestFocus(); keyboard?.show() } },
                                              modifier = Modifier.focusRing().testTag("insert-checkbox"),
                                              containerColor = MaterialTheme.colorScheme.secondaryContainer,
                                              contentColor = MaterialTheme.colorScheme.onSecondaryContainer) {
@@ -248,6 +248,7 @@ internal class NoteScreen(
         if (ready && !settingsOpen) when (event.editorAction()) {
             EditorAction.Close, EditorAction.Save -> { if (saveNote()) finish(); return true }
             EditorAction.ToggleCheck -> if (inputFocused) { draft.editNote { insertNoteCheckbox(it, toggle = true) }; return true }
+            EditorAction.InsertCheckbox -> if (inputFocused) { draft.editNote { insertNoteCheckbox(it) }; return true }
             EditorAction.NextLineCheckbox -> if (inputFocused) { draft.editNote(::insertNextLineCheckbox); return true }
             EditorAction.NewLineItem -> if (inputFocused) { draft.editNote { noteChecklistEnter(it) ?: notePlainNewline(it) }; return true }
             else -> Unit

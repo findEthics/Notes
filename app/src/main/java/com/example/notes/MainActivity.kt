@@ -400,9 +400,7 @@ class MainActivity : ComponentActivity() {
                      }
                  TopRightFontSettings { settingsOpen = true }
                 }
-                if (settingsOpen && !preview) FontSettingsDialog(settings, onKeyboardShortcuts = {
-                    settingsOpen = false; requestShowKeyboardShortcuts()
-                }) { settingsOpen = false }
+                 if (settingsOpen && !preview) FontSettingsDialog(settings) { settingsOpen = false }
     }
 
     public override fun onNewIntent(intent: Intent) {
@@ -634,16 +632,31 @@ class MainActivity : ComponentActivity() {
     override fun onProvideKeyboardShortcuts(data: MutableList<KeyboardShortcutGroup>, menu: Menu?, deviceId: Int) {
         fun shortcut(label: String, key: Int, modifiers: Int = 0) = KeyboardShortcutInfo(label, key, modifiers)
         val alt = KeyEvent.META_ALT_ON; val shift = KeyEvent.META_SHIFT_ON; val ctrl = KeyEvent.META_CTRL_ON
-        data.add(KeyboardShortcutGroup("Lists", listOf(
-            shortcut("New note / to-do", KeyEvent.KEYCODE_N, alt), shortcut("New note", KeyEvent.KEYCODE_N, shift),
+        data.add(KeyboardShortcutGroup("Notes · Outside text fields", listOf(
+            shortcut("New note (to-do in To-dos list)", KeyEvent.KEYCODE_N, alt), shortcut("New note", KeyEvent.KEYCODE_N, shift),
             shortcut("New to-do", KeyEvent.KEYCODE_T, alt), shortcut("New to-do", KeyEvent.KEYCODE_T, shift),
-             shortcut("Switch Notes / To-dos (Shift+Space / Alt+Space)", KeyEvent.KEYCODE_SPACE, shift),
-             shortcut("Switch Notes / To-dos", KeyEvent.KEYCODE_SPACE, alt), shortcut("Delete row", KeyEvent.KEYCODE_DEL),
-            shortcut("Toggle done", KeyEvent.KEYCODE_D, ctrl), shortcut("Cancel selection", KeyEvent.KEYCODE_ESCAPE),
+        )))
+        data.add(KeyboardShortcutGroup("Notes · Lists", listOf(
+            shortcut("Switch Notes / To-dos", KeyEvent.KEYCODE_SPACE, shift),
+            shortcut("Switch Notes / To-dos", KeyEvent.KEYCODE_SPACE, alt),
+            shortcut("Previous item", KeyEvent.KEYCODE_DPAD_UP), shortcut("Next item", KeyEvent.KEYCODE_DPAD_DOWN),
+            shortcut("Next item", KeyEvent.KEYCODE_TAB), shortcut("Previous item", KeyEvent.KEYCODE_TAB, shift),
+            shortcut("Open focused item", KeyEvent.KEYCODE_ENTER),
+            shortcut("Delete item / selection", KeyEvent.KEYCODE_FORWARD_DEL), shortcut("Delete item / selection", KeyEvent.KEYCODE_DEL),
+            shortcut("Toggle focused to-do done", KeyEvent.KEYCODE_D, ctrl), shortcut("Cancel selection", KeyEvent.KEYCODE_ESCAPE),
             shortcut("Undo delete", KeyEvent.KEYCODE_Z, ctrl))))
-        data.add(KeyboardShortcutGroup("Editors", listOf(
-            shortcut("Next item / to-do", KeyEvent.KEYCODE_ENTER), shortcut("Newline", KeyEvent.KEYCODE_ENTER, shift),
-            shortcut("Toggle checkbox", KeyEvent.KEYCODE_D, ctrl), shortcut("Save", KeyEvent.KEYCODE_S, ctrl),
+        data.add(KeyboardShortcutGroup("Notes · Note editor", listOf(
+            shortcut("Insert checkbox at line start", KeyEvent.KEYCODE_Q, ctrl),
+            shortcut("Insert checkbox line below", KeyEvent.KEYCODE_I, ctrl),
+            shortcut("Insert checkbox line below", KeyEvent.KEYCODE_O, ctrl),
+            shortcut("Continue checklist / exit empty checkbox", KeyEvent.KEYCODE_ENTER), shortcut("Plain newline", KeyEvent.KEYCODE_ENTER, shift),
+            shortcut("Remove empty checkbox", KeyEvent.KEYCODE_DEL), shortcut("Toggle / insert checkbox", KeyEvent.KEYCODE_D, ctrl),
+            shortcut("Next control", KeyEvent.KEYCODE_TAB), shortcut("Previous control", KeyEvent.KEYCODE_TAB, shift),
+            shortcut("Save and close", KeyEvent.KEYCODE_S, ctrl),
+            shortcut("Save and close", KeyEvent.KEYCODE_ESCAPE), shortcut("Save and close", KeyEvent.KEYCODE_ENTER, alt))))
+        data.add(KeyboardShortcutGroup("Notes · To-do editor", listOf(
+            shortcut("Save and add another to-do", KeyEvent.KEYCODE_ENTER), shortcut("Newline", KeyEvent.KEYCODE_ENTER, shift),
+            shortcut("Toggle completed", KeyEvent.KEYCODE_D, ctrl), shortcut("Save to-do", KeyEvent.KEYCODE_S, ctrl),
             shortcut("Save and close", KeyEvent.KEYCODE_ESCAPE), shortcut("Save and close", KeyEvent.KEYCODE_ENTER, alt))))
         super.onProvideKeyboardShortcuts(data, menu, deviceId)
     }

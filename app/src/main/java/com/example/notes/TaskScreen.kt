@@ -156,7 +156,7 @@ internal class TaskScreen(
             }
             EditorAction.ToggleCheck -> { toggleCompleted(); return true }
             EditorAction.NewLineItem -> if (inputFocused) { submitTask(); return true }
-            EditorAction.NextLineCheckbox -> return true
+            EditorAction.InsertCheckbox, EditorAction.NextLineCheckbox -> return true
             null -> Unit
         }
         if (inputFocused && event.action == KeyEvent.ACTION_DOWN &&

@@ -10,14 +10,17 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.*
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontSynthesis
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.dp
 import androidx.core.content.res.ResourcesCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.example.notes.ui.NotesTheme
+import com.example.notes.ui.FontSettingsDialog
 import com.example.notes.ui.notesColorScheme
 import com.example.notes.ui.notesEditorTextStyle
 import com.example.notes.ui.notesTypography
@@ -41,6 +44,50 @@ class FoundationFontThemeTest {
     fun cleanup() {
         settings.close()
         context.deleteSharedPreferences(name)
+    }
+
+    @Test
+    fun checkboxButtonDefaultsVisiblePersistsAndObservesExternalChanges() {
+        assertTrue(settings.showCheckboxButton)
+        for (show in listOf(false, true)) {
+            instrumentation.runOnMainSync { settings.setShowCheckboxButton(show) }
+            assertEquals(show, preferences.getBoolean(FontSettings.SHOW_CHECKBOX_BUTTON_KEY, !show))
+            FontSettings(context, name).use { assertEquals(show, it.showCheckboxButton) }
+        }
+        instrumentation.runOnMainSync {
+            preferences.edit().putBoolean(FontSettings.SHOW_CHECKBOX_BUTTON_KEY, false).apply()
+        }
+        instrumentation.waitForIdleSync()
+        assertFalse(settings.showCheckboxButton)
+        assertTrue(preferences.edit().putString(FontSettings.SHOW_CHECKBOX_BUTTON_KEY, "invalid").commit())
+        settings.refresh()
+        assertTrue(settings.showCheckboxButton)
+        FontSettings(context, name).use { assertTrue(it.showCheckboxButton) }
+        instrumentation.runOnMainSync {
+            settings.setShowCheckboxButton(false)
+            preferences.edit().remove(FontSettings.SHOW_CHECKBOX_BUTTON_KEY).apply()
+        }
+        instrumentation.waitForIdleSync()
+        assertTrue(settings.showCheckboxButton)
+    }
+
+    @Test
+    fun settingsToggleIsAccessibleAndShortcutGuideScrollsAndClosesBackToSettings() {
+        compose.setContent { NotesTheme { FontSettingsDialog(settings) {} } }
+        compose.onNodeWithTag("show-checkbox-toggle").performScrollTo()
+            .assertIsOn().assertHeightIsAtLeast(48.dp).performClick().assertIsOff()
+        compose.runOnIdle { assertFalse(settings.showCheckboxButton) }
+        compose.onNodeWithTag("keyboard-shortcuts").performScrollTo().performClick()
+        compose.onNodeWithTag("shortcuts-dialog").assertIsDisplayed()
+        compose.onNodeWithText("Anywhere (outside text fields)").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Lists (Notes & To-dos)").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Ctrl+Q:", substring = true).performScrollTo()
+            .assertTextContains("Ctrl+I / Ctrl+O", substring = true)
+        compose.onNodeWithText("To-do Editor").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Enter: Save and add another to-do", substring = true).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("shortcuts-done").performClick()
+        compose.onNodeWithTag("shortcuts-dialog").assertDoesNotExist()
+        compose.onNodeWithTag("show-checkbox-toggle").performScrollTo().assertIsOff()
     }
 
     @Test

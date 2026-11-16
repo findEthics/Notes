@@ -32,8 +32,10 @@ class FontSettings(context: Context, preferencesName: String = "notes_font_setti
         .getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
     var choice: FontChoice by mutableStateOf(readChoice())
         private set
+    private var checkboxButtonVisible by mutableStateOf(readShowCheckboxButton())
+    val showCheckboxButton: Boolean get() = checkboxButtonVisible
     private val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == KEY || key == null) refresh()
+        if (key == KEY || key == SHOW_CHECKBOX_BUTTON_KEY || key == null) refresh()
     }
 
     init {
@@ -47,7 +49,16 @@ class FontSettings(context: Context, preferencesName: String = "notes_font_setti
 
     fun refresh() {
         choice = readChoice()
+        checkboxButtonVisible = readShowCheckboxButton()
     }
+
+    fun setShowCheckboxButton(show: Boolean) {
+        checkboxButtonVisible = show
+        preferences.edit().putBoolean(SHOW_CHECKBOX_BUTTON_KEY, show).apply()
+    }
+
+    private fun readShowCheckboxButton(): Boolean =
+        runCatching { preferences.getBoolean(SHOW_CHECKBOX_BUTTON_KEY, true) }.getOrDefault(true)
 
     private fun readChoice(): FontChoice {
         // Reset the pre-Lato choice once; subsequent user selections are untouched.
@@ -64,6 +75,7 @@ class FontSettings(context: Context, preferencesName: String = "notes_font_setti
 
     companion object {
         const val KEY = "font_choice"
+        const val SHOW_CHECKBOX_BUTTON_KEY = "show_checkbox_button"
     }
 }
 
